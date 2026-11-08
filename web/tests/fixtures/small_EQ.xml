@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:BaseVoltage rdf:ID="_00000000-0000-4000-8000-000000000001">
+    <cim:BaseVoltage.nominalVoltage>110</cim:BaseVoltage.nominalVoltage>
+    <cim:IdentifiedObject.name>110 kV</cim:IdentifiedObject.name>
+  </cim:BaseVoltage>
+  <cim:ACLineSegment rdf:ID="_00000000-0000-4000-8000-000000000002">
+    <cim:ACLineSegment.r>1</cim:ACLineSegment.r>
+    <cim:ACLineSegment.x>10</cim:ACLineSegment.x>
+    <cim:ConductingEquipment.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000001"/>
+    <cim:IdentifiedObject.name>Line 1</cim:IdentifiedObject.name>
+  </cim:ACLineSegment>
+  <cim:ACLineSegment rdf:ID="_00000000-0000-4000-8000-000000000003">
+    <cim:ACLineSegment.r>1</cim:ACLineSegment.r>
+    <cim:ACLineSegment.x>10</cim:ACLineSegment.x>
+    <cim:ConductingEquipment.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000001"/>
+    <cim:IdentifiedObject.name>Line 2</cim:IdentifiedObject.name>
+  </cim:ACLineSegment>
+  <cim:ConformLoad rdf:ID="_00000000-0000-4000-8000-000000000004">
+    <cim:IdentifiedObject.name>Load 1</cim:IdentifiedObject.name>
+  </cim:ConformLoad>
+</rdf:RDF>
