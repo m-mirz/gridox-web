@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:ConformLoad rdf:about="#_00000000-0000-4000-8000-000000000004">
+    <cim:EnergyConsumer.p>10</cim:EnergyConsumer.p>
+    <cim:EnergyConsumer.q>2</cim:EnergyConsumer.q>
+  </cim:ConformLoad>
+</rdf:RDF>

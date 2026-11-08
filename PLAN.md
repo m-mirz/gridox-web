@@ -166,8 +166,11 @@ Each phase ends with something usable, deployed.
 ### 1. Skeleton
 
 Workspace, `gridox-wasm`, worker with its typed protocol, Vite, PWA, deploy to Pages. Drop files on the page; the worker
-decodes them and the page shows the classes and counts. Can start before the upstream changes, against a git revision of
-gridoxide and the published cimoxide 0.6.0.
+decodes them and the page shows the classes and counts. Needs only the published `cimoxide-model` 0.6.0: gridoxide's `main` does not yet
+compile to wasm, and joins with its `parallel` feature.
+
+Measured on the skeleton: the wasm with the decoder alone is 520 KB gzipped, and ReliCapGrid's CGM (16 MB) decodes in 200 to 340 ms in Chromium and Firefox.
+WebKit is set up in CI, and has not been run yet.
 
 Done when: it works offline on the deployed URL, and CI fails if the wasm exceeds the budget below.
 
@@ -260,12 +263,12 @@ Starting points, to be revisited with browser measurements.
 
 | | Target | Measured so far |
 |---|---|---|
-| wasm, gzipped | 2 MB | 1.53 MB, before `wasm-opt` and before the UI's needs |
+| wasm, gzipped | 5 MB, to catch accidents rather than to trim features; reviewed as features are added | 0.52 MB with the decoder; 1.53 MB in the prototype with validation and solver, before `wasm-opt` |
 | First load on a fast connection | under 3 s | not measured |
 | Decode of a 16 MB model | under 1 s | 156 ms in Node |
 | Interaction during any calculation | no blocking | by design: workers |
 
-If size becomes a problem: `wasm-opt -Oz`, and splitting validation's tables into a module loaded on demand.
+The wasm is downloaded once and then cached by the service worker. Check the deployed site's real download size: whether Pages compresses `.wasm` has not been verified. If size becomes a problem: `wasm-opt -Oz`, and loading validation's tables or rarely used parts such as RAO on demand.
 
 ## Risks
 
@@ -301,7 +304,7 @@ Decided: the UI is **Svelte**, for its small bundle, with the grid in Cytoscape.
 
 ## Order of work
 
-1. Phase 1, against a git revision and published cimoxide: this will surface what Node could not.
+1. Phase 1, against published cimoxide: this will surface what Node could not.
 2. gridoxide's `parallel` feature and wasm CI, then cimoxide's threading fix and wasm CI.
 3. `cimoxide-view`, then phase 2.
 4. Phases 3 to 7 in order. Phases 3, 4 and 5 do not depend on each other and can swap; 6 needs 5, and 7 needs 4.
