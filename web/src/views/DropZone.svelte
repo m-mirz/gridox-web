@@ -1,14 +1,5 @@
 <script lang="ts">
-  let { busy, onfiles }: { busy: boolean; onfiles: (files: File[]) => void } = $props();
-  let over = $state(false);
-
-  function dropped(event: DragEvent) {
-    event.preventDefault();
-    over = false;
-    const files = [...(event.dataTransfer?.files ?? [])];
-    if (files.length) onfiles(files);
-  }
-
+  let { busy, compact, onfiles }: { busy: boolean; compact: boolean; onfiles: (files: File[]) => void } = $props();
   function chosen(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const files = [...(input.files ?? [])];
@@ -18,17 +9,11 @@
 </script>
 
 <label
-  class:over
+  class:compact
   data-testid="dropzone"
-  ondragover={(event) => {
-    event.preventDefault();
-    over = true;
-  }}
-  ondragleave={() => (over = false)}
-  ondrop={dropped}
 >
   <input type="file" multiple accept=".xml,application/xml,text/xml" disabled={busy} onchange={chosen} />
-  <strong>{busy ? 'Reading…' : 'Drop CGMES or NC files here, or choose them'}</strong>
+  <strong>{busy ? 'Reading…' : compact ? 'Add more files' : 'Drop CGMES or NC files or their folder anywhere, or choose them'}</strong>
   <span>They are read on this machine. Nothing is uploaded.</span>
 </label>
 
@@ -43,7 +28,14 @@
     cursor: pointer;
   }
 
-  label.over,
+  label.compact {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+
   label:focus-within {
     border-color: var(--accent);
     background: var(--panel);

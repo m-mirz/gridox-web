@@ -25,14 +25,34 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "cimoxide-model"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7da6e73d20cda4cd0c09a9726fbf4ec58ce752d3473e9c4391e9d3cd8c4deda7"
+checksum = "4c29d38839cd31923ab273fff07b8f483af2e0528a4e0bd7109d506dd2c84d97"
 dependencies = [
  "quick-xml",
  "serde",
  "serde_json",
  "sha1",
+]
+
+[[package]]
+name = "cimoxide-validation"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddfbf69a35c69ecfa86a49b8f3a1404e6213f89deefcf612f7f6581280ccb17c"
+dependencies = [
+ "cimoxide-model",
+]
+
+[[package]]
+name = "cimoxide-view"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20aa05c127887154772e7ed1ae67208df1e58af2e94e93430e032dce0434767b"
+dependencies = [
+ "cimoxide-model",
+ "cimoxide-validation",
+ "serde_json",
 ]
 
 [[package]]
@@ -105,6 +125,7 @@ name = "gridox-wasm"
 version = "0.0.0"
 dependencies = [
  "cimoxide-model",
+ "cimoxide-view",
  "console_error_panic_hook",
  "serde",
  "serde_json",

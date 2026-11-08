@@ -7,6 +7,15 @@
   --panel: #f3f4f6;
   --accent: #15803d;
   --warn: #92400e;
+  --focus: #1d4ed8;
+  --violation: #b91c1c;
+  --warning: #a16207;
+  --info: #1d4ed8;
+  /* Voltage bands, as grid maps colour them. */
+  --v300: #c9302c;
+  --v200: #2f855a;
+  --v100: #2563eb;
+  --v30: #7c3aed;
   font-family: system-ui, sans-serif;
   line-height: 1.5;
 }
@@ -20,6 +29,14 @@
     --panel: #1f2937;
     --accent: #4ade80;
     --warn: #fbbf24;
+    --focus: #60a5fa;
+    --violation: #f87171;
+    --warning: #fbbf24;
+    --info: #60a5fa;
+    --v300: #e5534b;
+    --v200: #57ab5a;
+    --v100: #539bf5;
+    --v30: #b083f0;
   }
 }
 

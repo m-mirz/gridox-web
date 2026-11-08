@@ -3,6 +3,7 @@ import { WorkerClient, type WorkerLike } from './client';
 import type { Envelope, Reply, Summary } from './protocol';
 
 const summary: Summary = { files: [], objects: 1, foreign: 0, classes: [] };
+const answer = (objects: number) => JSON.stringify({ summary: { ...summary, objects }, kept: false });
 
 class FakeWorker implements WorkerLike {
   onmessage: WorkerLike['onmessage'] = null;
@@ -36,10 +37,10 @@ describe('WorkerClient', () => {
     const first = made.request({ kind: 'clear' });
     const second = made.request({ kind: 'clear' });
     const [a, b] = workers[0].sent;
-    workers[0].reply({ id: b.id, ok: true, summary: { ...summary, objects: 2 } });
-    workers[0].reply({ id: a.id, ok: true, summary });
-    expect((await first).objects).toBe(1);
-    expect((await second).objects).toBe(2);
+    workers[0].reply({ id: b.id, ok: true, json: answer(2) });
+    workers[0].reply({ id: a.id, ok: true, json: answer(1) });
+    expect((await first).summary.objects).toBe(1);
+    expect((await second).summary.objects).toBe(2);
   });
 
   it('rejects what the worker reports as failed, and keeps the worker', async () => {
@@ -58,7 +59,7 @@ describe('WorkerClient', () => {
     expect(workers[0].terminated).toBe(true);
     expect(workers).toHaveLength(2);
     const next = made.request({ kind: 'clear' });
-    workers[1].reply({ id: workers[1].sent[0].id, ok: true, summary });
-    await expect(next).resolves.toEqual(summary);
+    workers[1].reply({ id: workers[1].sent[0].id, ok: true, json: answer(1) });
+    await expect(next).resolves.toEqual({ summary, kept: false });
   });
 });

@@ -28,8 +28,38 @@ impl JsSession {
         self.0.add_file(name, text);
     }
 
+    #[wasm_bindgen(js_name = skipFile)]
+    pub fn skip_file(&mut self, name: &str, reason: &str) {
+        self.0.skip_file(name, reason);
+    }
+
     /// The session's [`Summary`], as JSON.
     pub fn summary(&self) -> Result<String, JsError> {
         Ok(serde_json::to_string(&self.0.summary())?)
+    }
+
+    pub fn grid(&mut self) -> String {
+        self.0.grid().to_string()
+    }
+
+    pub fn inside(&mut self, id: &str) -> String {
+        self.0.inside(id).to_string()
+    }
+
+    /// The tree's sections without a `key`, else that node's children.
+    pub fn children(&mut self, key: Option<String>) -> String {
+        self.0.children(key.as_deref()).to_string()
+    }
+
+    pub fn search(&mut self, query: &str) -> String {
+        self.0.search(query).to_string()
+    }
+
+    pub fn path(&mut self, id: &str) -> String {
+        self.0.path(id).to_string()
+    }
+
+    pub fn object(&mut self, id: &str) -> String {
+        self.0.object(id).to_string()
     }
 }
