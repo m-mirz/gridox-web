@@ -1,4 +1,4 @@
-// Fails the build if the wasm, gzipped, is over the budget in PLAN.md.
+// Fails the build if the wasm, gzipped, is over the budget. It is there to catch accidents, not to trim features.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';

@@ -3,7 +3,7 @@
 Power system models in your browser: [gridoxide](https://github.com/m-mirz/gridoxide) and
 [cimoxide](https://github.com/m-mirz/cimoxide) as WebAssembly, in a static PWA. Nothing leaves your machine.
 
-Early days: it loads CGMES and NC files and counts what is in them. [PLAN.md](PLAN.md) says where this is going.
+Early days: it loads CGMES and NC files and counts what is in them.
 
 ## Develop
 
