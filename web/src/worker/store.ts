@@ -43,7 +43,8 @@ export async function keep(files: File[]): Promise<boolean> {
       }
     }
     return true;
-  } catch {
+  } catch (error) {
+    console.warn('The files could not be kept in this browser:', error);
     // Part of a model would come back as if it were all of it.
     await forget().catch(() => {});
     return false;

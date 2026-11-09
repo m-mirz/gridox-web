@@ -237,19 +237,22 @@ test.describe('browsing', () => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(375);
   });
+});
 
-  test('breaks none of the page\'s rules while drawing', async ({ context }) => {
-    const page = await context.newPage();
-    const problems: string[] = [];
-    page.on('console', (message) => {
-      if (message.type() === 'error') problems.push(message.text());
-    });
-    page.on('pageerror', (error) => problems.push(String(error)));
-    await page.goto('./');
-    await page.getByRole('button', { name: 'Clear' }).waitFor({ timeout: 15_000 }).catch(() => {});
-    await expect.poll(() => painted(page).catch(() => false)).toBe(true);
-    expect(problems).toEqual([]);
+test('breaks none of the page\'s rules while drawing', async ({ browser, baseURL }) => {
+  // A context of its own, watched from before it loads, with nothing kept from another test.
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  const problems: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') problems.push(message.text());
   });
+  page.on('pageerror', (error) => problems.push(String(error)));
+  await page.goto('./');
+  await input(page).setInputFiles(GRID);
+  await expect.poll(() => painted(page).catch(() => false)).toBe(true);
+  expect(problems).toEqual([]);
+  await context.close();
 });
 
 test('says so when the files hold no grid', async ({ page }) => {
@@ -257,7 +260,11 @@ test('says so when the files hold no grid', async ({ page }) => {
   await expect(page.getByTestId('no-grid')).toBeVisible();
 });
 
-test('a reload brings the files back, until they are cleared', async ({ page }) => {
+test('a reload brings the files back, until they are cleared', async ({ playwright, browserName, baseURL }) => {
+  // On disk, as a browser is used: WebKit gives Playwright's usual contexts no private file system.
+  const context = await playwright[browserName].launchPersistentContext(mkdtempSync(join(tmpdir(), 'gridox-')), { baseURL });
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('./');
   await input(page).setInputFiles([EQ, SSH]);
   await expect(page.getByTestId('kept')).toBeVisible();
   await page.reload();
@@ -265,6 +272,18 @@ test('a reload brings the files back, until they are cleared', async ({ page }) 
   await expect(page.getByTestId('kept')).toBeVisible();
   await page.getByRole('button', { name: 'Clear' }).click();
   await expect(page.getByTestId('totals')).toBeHidden();
+  await page.reload();
+  await expect(input(page)).toBeAttached();
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId('totals')).toBeHidden();
+  await context.close();
+});
+
+test('where files cannot be kept, it still reads them and does not say they are kept', async ({ page, browserName }) => {
+  test.skip(browserName !== 'webkit', 'only WebKit refuses in a test, as it may in a private window');
+  await input(page).setInputFiles(EQ);
+  await expect(page.getByTestId('totals')).toContainText('4 objects from 1 file');
+  await expect(page.getByTestId('kept')).toBeHidden();
   await page.reload();
   await expect(input(page)).toBeAttached();
   await page.waitForTimeout(500);
