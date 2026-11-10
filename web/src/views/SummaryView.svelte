@@ -24,7 +24,8 @@
 {/if}
 
 {#if summary.classes.length}
-  <h2>Classes</h2>
+  <details>
+  <summary>Classes</summary>
   <table data-testid="classes">
     <thead>
       <tr><th scope="col">Class</th><th scope="col" class="number">Objects</th></tr>
@@ -35,6 +36,7 @@
       {/each}
     </tbody>
   </table>
+  </details>
 {/if}
 
 <style>

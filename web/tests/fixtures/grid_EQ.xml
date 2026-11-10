@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:BaseVoltage rdf:ID="_00000000-0000-4000-8000-000000000b00">
+    <cim:IdentifiedObject.name>110 kV</cim:IdentifiedObject.name>
+    <cim:BaseVoltage.nominalVoltage>110</cim:BaseVoltage.nominalVoltage>
+  </cim:BaseVoltage>
+  <cim:SubGeographicalRegion rdf:ID="_00000000-0000-4000-8000-000000000b01">
+    <cim:IdentifiedObject.name>South</cim:IdentifiedObject.name>
+  </cim:SubGeographicalRegion>
+  <cim:Substation rdf:ID="_00000000-0000-4000-8000-000000000a01">
+    <cim:IdentifiedObject.name>Anvil</cim:IdentifiedObject.name>
+    <cim:Substation.Region rdf:resource="#_00000000-0000-4000-8000-000000000b01"/>
+  </cim:Substation>
+  <cim:Substation rdf:ID="_00000000-0000-4000-8000-000000000a02">
+    <cim:IdentifiedObject.name>Birch</cim:IdentifiedObject.name>
+    <cim:Substation.Region rdf:resource="#_00000000-0000-4000-8000-000000000b01"/>
+  </cim:Substation>
+  <cim:VoltageLevel rdf:ID="_00000000-0000-4000-8000-000000000a11">
+    <cim:IdentifiedObject.name>Anvil 110</cim:IdentifiedObject.name>
+    <cim:VoltageLevel.Substation rdf:resource="#_00000000-0000-4000-8000-000000000a01"/>
+    <cim:VoltageLevel.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+  </cim:VoltageLevel>
+  <cim:VoltageLevel rdf:ID="_00000000-0000-4000-8000-000000000a12">
+    <cim:IdentifiedObject.name>Birch 110</cim:IdentifiedObject.name>
+    <cim:VoltageLevel.Substation rdf:resource="#_00000000-0000-4000-8000-000000000a02"/>
+    <cim:VoltageLevel.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+  </cim:VoltageLevel>
+  <cim:ConnectivityNode rdf:ID="_00000000-0000-4000-8000-000000000a21">
+    <cim:IdentifiedObject.name>Anvil bus</cim:IdentifiedObject.name>
+    <cim:ConnectivityNode.ConnectivityNodeContainer rdf:resource="#_00000000-0000-4000-8000-000000000a11"/>
+  </cim:ConnectivityNode>
+  <cim:ConnectivityNode rdf:ID="_00000000-0000-4000-8000-000000000a23">
+    <cim:IdentifiedObject.name>Anvil line end</cim:IdentifiedObject.name>
+    <cim:ConnectivityNode.ConnectivityNodeContainer rdf:resource="#_00000000-0000-4000-8000-000000000a11"/>
+  </cim:ConnectivityNode>
+  <cim:ConnectivityNode rdf:ID="_00000000-0000-4000-8000-000000000a22">
+    <cim:IdentifiedObject.name>Birch bus</cim:IdentifiedObject.name>
+    <cim:ConnectivityNode.ConnectivityNodeContainer rdf:resource="#_00000000-0000-4000-8000-000000000a12"/>
+  </cim:ConnectivityNode>
+  <cim:Breaker rdf:ID="_00000000-0000-4000-8000-000000000a30">
+    <cim:IdentifiedObject.name>Breaker A</cim:IdentifiedObject.name>
+    <cim:Equipment.EquipmentContainer rdf:resource="#_00000000-0000-4000-8000-000000000a11"/>
+    <cim:Switch.normalOpen>false</cim:Switch.normalOpen>
+  </cim:Breaker>
+  <cim:ConformLoad rdf:ID="_00000000-0000-4000-8000-000000000a31">
+    <cim:IdentifiedObject.name>Load B</cim:IdentifiedObject.name>
+    <cim:Equipment.EquipmentContainer rdf:resource="#_00000000-0000-4000-8000-000000000a12"/>
+  </cim:ConformLoad>
+  <cim:ACLineSegment rdf:ID="_00000000-0000-4000-8000-000000000a32">
+    <cim:IdentifiedObject.name>Anvil-Birch</cim:IdentifiedObject.name>
+    <cim:ACLineSegment.r>1</cim:ACLineSegment.r>
+    <cim:ACLineSegment.x>10</cim:ACLineSegment.x>
+    <cim:ConductingEquipment.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+  </cim:ACLineSegment>
+  <cim:Terminal rdf:ID="_00000000-0000-4000-8000-000000000a40">
+    <cim:IdentifiedObject.name>T40</cim:IdentifiedObject.name>
+    <cim:Terminal.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a30"/>
+    <cim:Terminal.ConnectivityNode rdf:resource="#_00000000-0000-4000-8000-000000000a21"/>
+    <cim:ACDCTerminal.sequenceNumber>1</cim:ACDCTerminal.sequenceNumber>
+  </cim:Terminal>
+  <cim:Terminal rdf:ID="_00000000-0000-4000-8000-000000000a41">
+    <cim:IdentifiedObject.name>T41</cim:IdentifiedObject.name>
+    <cim:Terminal.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a30"/>
+    <cim:Terminal.ConnectivityNode rdf:resource="#_00000000-0000-4000-8000-000000000a23"/>
+    <cim:ACDCTerminal.sequenceNumber>2</cim:ACDCTerminal.sequenceNumber>
+  </cim:Terminal>
+  <cim:Terminal rdf:ID="_00000000-0000-4000-8000-000000000a42">
+    <cim:IdentifiedObject.name>T42</cim:IdentifiedObject.name>
+    <cim:Terminal.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a31"/>
+    <cim:Terminal.ConnectivityNode rdf:resource="#_00000000-0000-4000-8000-000000000a22"/>
+    <cim:ACDCTerminal.sequenceNumber>1</cim:ACDCTerminal.sequenceNumber>
+  </cim:Terminal>
+  <cim:Terminal rdf:ID="_00000000-0000-4000-8000-000000000a43">
+    <cim:IdentifiedObject.name>T43</cim:IdentifiedObject.name>
+    <cim:Terminal.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a32"/>
+    <cim:Terminal.ConnectivityNode rdf:resource="#_00000000-0000-4000-8000-000000000a23"/>
+    <cim:ACDCTerminal.sequenceNumber>1</cim:ACDCTerminal.sequenceNumber>
+  </cim:Terminal>
+  <cim:Terminal rdf:ID="_00000000-0000-4000-8000-000000000a44">
+    <cim:IdentifiedObject.name>T44</cim:IdentifiedObject.name>
+    <cim:Terminal.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a32"/>
+    <cim:Terminal.ConnectivityNode rdf:resource="#_00000000-0000-4000-8000-000000000a22"/>
+    <cim:ACDCTerminal.sequenceNumber>2</cim:ACDCTerminal.sequenceNumber>
+  </cim:Terminal>
+</rdf:RDF>

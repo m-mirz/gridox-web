@@ -1,4 +1,4 @@
-import type { Envelope, Reply, Request, Summary } from './protocol';
+import type { Answers, Envelope, Reply, Request } from './protocol';
 
 /** The part of a Worker this uses, so that tests can stand in for one. */
 export interface WorkerLike {
@@ -8,7 +8,7 @@ export interface WorkerLike {
   terminate(): void;
 }
 
-type Pending = { resolve: (summary: Summary) => void; reject: (error: Error) => void };
+type Pending = { resolve: (answer: never) => void; reject: (error: Error) => void };
 
 /**
  * Requests to the worker, as promises. A panic in the wasm kills the instance and everything it
@@ -24,10 +24,10 @@ export class WorkerClient {
     this.worker = this.launch();
   }
 
-  request(request: Request): Promise<Summary> {
+  request<K extends Request['kind']>(request: Extract<Request, { kind: K }>): Promise<Answers[K]> {
     const id = this.next++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve: resolve as (answer: never) => void, reject });
       this.worker.postMessage({ id, request });
     });
   }
@@ -38,7 +38,7 @@ export class WorkerClient {
       const pending = this.pending.get(data.id);
       if (!pending) return;
       this.pending.delete(data.id);
-      if (data.ok) pending.resolve(data.summary);
+      if (data.ok) pending.resolve(JSON.parse(data.json) as never);
       else pending.reject(new Error(data.error));
     };
     worker.onerror = (event) => {
