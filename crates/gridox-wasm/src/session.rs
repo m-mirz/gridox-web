@@ -603,6 +603,212 @@ impl Session {
     }
 }
 
+/// Network Code tables: contingencies and assessed elements, each row with the objects it links to
+/// and where the grid shows its equipment.
+impl Session {
+    /// The objects of class `local`, in either family (`nc:` prefixed or not), in the order read.
+    fn of_type<'a>(
+        &'a self,
+        local: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a cimmodel::Element)> + 'a {
+        let lists = self.dataset.by_type.iter().filter(move |(key, _)| {
+            key.as_str() == local || key.rsplit_once(':').is_some_and(|(_, name)| name == local)
+        });
+        let mut ids: Vec<&String> = lists.flat_map(|(_, ids)| ids).collect();
+        ids.sort_unstable();
+        ids.into_iter()
+            .filter_map(|id| Some((id.as_str(), self.dataset.entries.get(id)?)))
+    }
+
+    /// An object linked to, as a table cell: its name and class; `missing` if the set lacks it.
+    fn linked(&self, id: &str) -> Value {
+        match self.dataset.entries.get(id) {
+            Some(e) => {
+                json!({ "id": id, "label": e.get_str("IdentifiedObject.name"), "class": e.local_name() })
+            }
+            None => json!({ "id": id, "label": null, "class": null, "missing": true }),
+        }
+    }
+
+    /// The field `key` of `element` as text, an enumeration's value without its type
+    /// (`ElementCombinationConstraintKind.excluded` → `excluded`).
+    fn text(element: &cimmodel::Element, key: &str) -> Option<String> {
+        let value = mrid_of(element.get_str(key).or_else(|| element.get_ref(key))?);
+        let short = value.split_once("Kind.").map_or(value, |(_, v)| v);
+        Some(short.to_string())
+    }
+
+    /// Where the grid shows each of `equipment` that it shows.
+    fn on_grid(&mut self, equipment: &[&str]) -> Vec<Value> {
+        let views = self.views();
+        equipment
+            .iter()
+            .filter_map(|id| views.grid.reveal(id))
+            .collect()
+    }
+
+    /// The contingencies, each with its equipment and the assessed elements combined with it.
+    pub fn contingencies(&mut self) -> Value {
+        let mut equipment: BTreeMap<&str, Vec<(&str, Option<String>)>> = BTreeMap::new();
+        for (_, element) in self.of_type("ContingencyEquipment") {
+            if let (Some(c), Some(e)) = (
+                element.get_ref("ContingencyElement.Contingency"),
+                element.get_ref("ContingencyEquipment.Equipment"),
+            ) {
+                equipment.entry(mrid_of(c)).or_default().push((
+                    mrid_of(e),
+                    Self::text(element, "ContingencyEquipment.contingentStatus"),
+                ));
+            }
+        }
+        let mut assessed: BTreeMap<&str, Vec<(&str, Option<String>)>> = BTreeMap::new();
+        for (_, element) in self.of_type("AssessedElementWithContingency") {
+            if let (Some(c), Some(a)) = (
+                element.get_ref("AssessedElementWithContingency.Contingency"),
+                element.get_ref("AssessedElementWithContingency.AssessedElement"),
+            ) {
+                assessed.entry(mrid_of(c)).or_default().push((
+                    mrid_of(a),
+                    Self::text(
+                        element,
+                        "AssessedElementWithContingency.combinationConstraintKind",
+                    ),
+                ));
+            }
+        }
+        let mut rows: Vec<(String, Value, Vec<String>)> = Vec::new();
+        for class in [
+            "OrdinaryContingency",
+            "ExceptionalContingency",
+            "OutOfRangeContingency",
+        ] {
+            for (id, element) in self.of_type(class) {
+                let named = equipment.get(id).map_or(&[][..], Vec::as_slice);
+                let row = json!({
+                    "id": id, "label": element.get_str("IdentifiedObject.name"), "class": class,
+                    "mustStudy": Self::text(element, "Contingency.normalMustStudy"),
+                    "equipment": named.iter().map(|(e, status)| {
+                        let mut cell = self.linked(e);
+                        cell["status"] = json!(status);
+                        cell
+                    }).collect::<Vec<_>>(),
+                    "assessed": assessed.get(id).map_or(&[][..], Vec::as_slice).iter().map(|(a, kind)| {
+                        let mut cell = self.linked(a);
+                        cell["kind"] = json!(kind);
+                        cell
+                    }).collect::<Vec<_>>(),
+                });
+                rows.push((
+                    id.to_string(),
+                    row,
+                    named.iter().map(|(e, _)| e.to_string()).collect(),
+                ));
+            }
+        }
+        let rows: Vec<Value> = rows
+            .into_iter()
+            .map(|(_, mut row, equipment)| {
+                let ids: Vec<&str> = equipment.iter().map(String::as_str).collect();
+                row["grid"] = json!(self.on_grid(&ids));
+                row
+            })
+            .collect();
+        Value::Array(rows)
+    }
+
+    /// What an assessed element assesses: its equipment, else that of its operational limit,
+    /// through the limit's set (its equipment, else its terminal's).
+    fn assessed_equipment<'a>(&'a self, element: &'a cimmodel::Element) -> Option<&'a str> {
+        if let Some(e) = element.get_ref("AssessedElement.ConductingEquipment") {
+            return Some(mrid_of(e));
+        }
+        let limit = self.dataset.entries.get(mrid_of(
+            element.get_ref("AssessedElement.OperationalLimit")?,
+        ))?;
+        let set = self.dataset.entries.get(mrid_of(
+            limit.get_ref("OperationalLimit.OperationalLimitSet")?,
+        ))?;
+        if let Some(e) = set.get_ref("OperationalLimitSet.Equipment") {
+            return Some(mrid_of(e));
+        }
+        let terminal = self
+            .dataset
+            .entries
+            .get(mrid_of(set.get_ref("OperationalLimitSet.Terminal")?))?;
+        terminal
+            .get_ref("Terminal.ConductingEquipment")
+            .map(mrid_of)
+    }
+
+    /// The assessed elements: whether they are in the base case and secured or scanned for a
+    /// region, why excluded, what they assess, their schedules, and the contingencies and remedial
+    /// actions combined with them.
+    pub fn assessed_elements(&mut self) -> Value {
+        let mut combined: BTreeMap<&str, (Vec<Value>, Vec<Value>)> = BTreeMap::new();
+        for (key, which) in [
+            ("AssessedElementWithContingency", "Contingency"),
+            ("AssessedElementWithRemedialAction", "RemedialAction"),
+        ] {
+            for (_, element) in self.of_type(key) {
+                let (Some(a), Some(other)) = (
+                    element.get_ref(&format!("{key}.AssessedElement")),
+                    element.get_ref(&format!("{key}.{which}")),
+                ) else {
+                    continue;
+                };
+                let mut cell = self.linked(mrid_of(other));
+                cell["kind"] = json!(Self::text(
+                    element,
+                    &format!("{key}.combinationConstraintKind")
+                ));
+                let entry = combined.entry(mrid_of(a)).or_default();
+                if which == "Contingency" {
+                    entry.0.push(cell)
+                } else {
+                    entry.1.push(cell)
+                }
+            }
+        }
+        let mut schedules: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (id, element) in self.of_type("AssessedElementSchedule") {
+            if let Some(a) = element.get_ref("AssessedElementSchedule.AssessedElement") {
+                schedules.entry(mrid_of(a)).or_default().push(id);
+            }
+        }
+        let region = |element: &cimmodel::Element, key: &str| {
+            element.get_ref(key).map(|r| self.linked(mrid_of(r)))
+        };
+        let mut rows = Vec::new();
+        for (id, element) in self.of_type("AssessedElement") {
+            let assesses = self.assessed_equipment(element);
+            let (contingencies, actions) = combined.remove(id).unwrap_or_default();
+            rows.push((json!({
+                "id": id, "label": element.get_str("IdentifiedObject.name"),
+                "inBaseCase": Self::text(element, "AssessedElement.inBaseCase"),
+                "normalEnabled": Self::text(element, "AssessedElement.normalEnabled"),
+                "securedFor": region(element, "AssessedElement.SecuredForRegion"),
+                "scannedFor": region(element, "AssessedElement.ScannedForRegion"),
+                "exclusionReason": Self::text(element, "AssessedElement.exclusionReason"),
+                "combinableWithContingency": Self::text(element, "AssessedElement.isCombinableWithContingency"),
+                "combinableWithRemedialAction": Self::text(element, "AssessedElement.isCombinableWithRemedialAction"),
+                "assesses": assesses.map(|e| self.linked(e)),
+                "limit": element.get_ref("AssessedElement.OperationalLimit").map(|l| self.linked(mrid_of(l))),
+                "schedules": schedules.get(id).map_or(&[][..], Vec::as_slice).iter().map(|s| self.linked(s)).collect::<Vec<_>>(),
+                "contingencies": contingencies, "remedialActions": actions,
+            }), assesses.map(str::to_string)));
+        }
+        let rows: Vec<Value> = rows
+            .into_iter()
+            .map(|(mut row, assesses)| {
+                let ids: Vec<&str> = assesses.iter().map(String::as_str).collect();
+                row["grid"] = json!(self.on_grid(&ids));
+                row
+            })
+            .collect();
+        Value::Array(rows)
+    }
+}
+
 impl Session {
     /// What validation found on the object `id`.
     fn findings_on(&self, id: &str) -> Vec<Value> {
@@ -969,6 +1175,65 @@ mod tests {
         assert_eq!(page["foreign"], true);
         assert_eq!(page["class"], "Concept");
         assert_eq!(page["referrers"]["by"][0]["objects"][0]["id"], BREAKER);
+    }
+
+    const NC: &str = include_str!("../../../web/tests/fixtures/nc_CO_AE.xml");
+    const LINE: &str = "_00000000-0000-4000-8000-000000000a32";
+
+    fn with_nc() -> Session {
+        let mut session = grid_session();
+        session.add_file("nc_CO_AE.xml", NC);
+        session
+    }
+
+    #[test]
+    fn a_contingency_lists_its_equipment_where_the_grid_shows_it() {
+        let rows = with_nc().contingencies();
+        let row = &rows[0];
+        assert_eq!(row["label"], "Loss of Anvil-Birch");
+        assert_eq!(row["class"], "OrdinaryContingency");
+        assert_eq!(row["mustStudy"], "true");
+        assert_eq!(row["equipment"][0]["id"], LINE);
+        assert_eq!(row["equipment"][0]["label"], "Anvil-Birch");
+        assert_eq!(row["equipment"][0]["status"], "outOfService");
+        assert_eq!(row["assessed"][0]["label"], "Flow on Anvil-Birch");
+        assert_eq!(row["assessed"][0]["kind"], "excluded");
+        assert_eq!(row["grid"][0]["select"], format!("e:{LINE}"));
+    }
+
+    #[test]
+    fn an_assessed_element_says_how_it_is_assessed_and_with_what() {
+        let rows = with_nc().assessed_elements();
+        let rows = rows.as_array().unwrap();
+        let flow = rows
+            .iter()
+            .find(|r| r["label"] == "Flow on Anvil-Birch")
+            .unwrap();
+        assert_eq!(flow["inBaseCase"], "true");
+        assert_eq!(
+            flow["securedFor"],
+            json!({ "id": "_region", "label": null, "class": null, "missing": true })
+        );
+        assert_eq!(flow["assesses"]["label"], "Anvil-Birch");
+        assert_eq!(flow["contingencies"][0]["kind"], "excluded");
+        assert_eq!(flow["grid"][0]["select"], format!("e:{LINE}"));
+        let scanned = rows
+            .iter()
+            .find(|r| r["label"] == "Breaker A scanned")
+            .unwrap();
+        assert!(scanned["securedFor"].is_null());
+        assert_eq!(
+            scanned["exclusionReason"],
+            "nonNativeCapacityCalculationRegion"
+        );
+        assert_eq!(scanned["grid"][0]["enter"], ANVIL);
+    }
+
+    #[test]
+    fn a_model_without_network_codes_has_empty_tables() {
+        let mut session = grid_session();
+        assert_eq!(session.contingencies(), json!([]));
+        assert_eq!(session.assessed_elements(), json!([]));
     }
 
     #[test]

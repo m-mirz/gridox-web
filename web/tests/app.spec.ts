@@ -8,6 +8,7 @@ const EQ = fixture('small_EQ.xml');
 const SSH = fixture('small_SSH.xml');
 const GRID = fixture('grid_EQ.xml');
 const SECOND = fixture('second_EQ.xml');
+const NC = fixture('nc_CO_AE.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -364,6 +365,46 @@ test.describe('datasets', () => {
     const details = page.getByTestId('details');
     await expect(details).toContainText('Reference data, outside the CIM class tables.');
     await expect(page.getByTestId('referrers')).toContainText('Switch.concept');
+  });
+});
+
+test.describe('network codes', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, NC]);
+    await expect(page.getByTestId('network-codes')).toBeVisible();
+  });
+
+  test('a contingency shows its equipment, and where the grid has it', async ({ page }) => {
+    const row = page.getByTestId('contingencies').getByRole('row', { name: /Loss of Anvil-Birch/ });
+    await expect(row).toContainText('Anvil-Birch');
+    await expect(row).toContainText('outOfService');
+    await expect(row).toContainText('Flow on Anvil-Birch');
+    await expect(row).toContainText('excluded');
+    await row.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+    await page.getByRole('button', { name: 'Clear highlight' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeHidden();
+  });
+
+  test('assessed elements say how they are assessed', async ({ page }) => {
+    await page.getByRole('tab', { name: /Assessed elements/ }).click();
+    const table = page.getByTestId('assessed-elements');
+    const scanned = table.getByRole('row', { name: /Breaker A scanned/ });
+    await expect(scanned).toContainText('nonNativeCapacityCalculationRegion');
+    await expect(scanned).toContainText('_region');
+    await scanned.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('a table leads to an object\'s page', async ({ page }) => {
+    await page.getByTestId('contingencies').getByRole('button', { name: 'Loss of Anvil-Birch' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: 'Loss of Anvil-Birch' })).toBeVisible();
+    await expect(page.getByTestId('referrers')).toContainText('ContingencyElement.Contingency');
+  });
+
+  test('filters by name', async ({ page }) => {
+    await page.getByLabel('Filter the table').fill('nothing like it');
+    await expect(page.getByTestId('contingencies').getByRole('row')).toHaveCount(1);
   });
 });
 

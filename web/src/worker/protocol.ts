@@ -122,6 +122,45 @@ export interface HeaderRef {
   values: ObjectValue[];
 }
 
+/** An object linked to from a table: `missing` if the set lacks it. */
+export interface Linked {
+  id: string;
+  label: string | null;
+  class: string | null;
+  missing?: boolean;
+  /** The link's own: a contingent status, a combination's kind. */
+  status?: string | null;
+  kind?: string | null;
+}
+
+export interface Contingency {
+  id: string;
+  label: string | null;
+  class: string;
+  mustStudy: string | null;
+  equipment: Linked[];
+  assessed: Linked[];
+  grid: Reveal[];
+}
+
+export interface AssessedElement {
+  id: string;
+  label: string | null;
+  inBaseCase: string | null;
+  normalEnabled: string | null;
+  securedFor: Linked | null;
+  scannedFor: Linked | null;
+  exclusionReason: string | null;
+  combinableWithContingency: string | null;
+  combinableWithRemedialAction: string | null;
+  assesses: Linked | null;
+  limit: Linked | null;
+  schedules: Linked[];
+  contingencies: Linked[];
+  remedialActions: Linked[];
+  grid: Reveal[];
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -149,7 +188,9 @@ export type Request =
   | { kind: 'object'; id: string }
   | ({ kind: 'validate' } & Checks)
   | { kind: 'findings'; rule: string }
-  | { kind: 'datasets' };
+  | { kind: 'datasets' }
+  | { kind: 'contingencies' }
+  | { kind: 'assessedElements' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -165,6 +206,8 @@ export interface Answers {
   validate: FindingsSummary;
   findings: Finding[];
   datasets: Datasets | null;
+  contingencies: Contingency[];
+  assessedElements: AssessedElement[];
 }
 
 export type Envelope = { id: number; request: Request };

@@ -45,6 +45,8 @@
   let query = $state('');
   let layouts = $state.raw<Layout[]>([]);
   let layout = $state('auto');
+  /** What a table row asked to see: shown until cleared. */
+  let highlighting = $state(false);
   /** Counts the grids loaded to be drawn anew, as a refresh of the findings is not. */
   let loaded = $state(0);
   /** Whether the grid shown has the findings: until it is asked again, it says nothing of them. */
@@ -231,6 +233,7 @@
       });
     });
     cy.on('dbltap', 'node, edge', (event) => open(event.target as Target));
+    highlighting = false;
   }
 
   function changeLayout() {
@@ -242,6 +245,7 @@
   function find() {
     if (!cy) return;
     const q = query.trim().toLowerCase();
+    clearHighlight();
     cy.elements().removeClass('dim');
     if (!q) return;
     const hits = cy.nodes().filter((n) => String(n.data('label')).toLowerCase().includes(q));
@@ -270,6 +274,38 @@
     // A small scene is seen whole; in a large one, what the selection joins.
     const near = el.isEdge() ? el.union(el.connectedNodes()) : (el as NodeSingular).closedNeighborhood();
     cy.animate({ fit: { eles: cy.elements().length < 40 ? cy.elements() : near, padding: 40 } }, { duration: 200 });
+  }
+
+  /**
+   * Shows `at` together on the grid, the rest faded: each where the grid has it, equipment inside a
+   * substation as that substation. What the grid does not show is left out. How many it showed.
+   */
+  export function highlight(at: Reveal[]): number {
+    if (!grid || !container) return 0;
+    if (inside) {
+      inside = null;
+      draw();
+    }
+    if (!cy) return 0;
+    let shown = cy.collection();
+    for (const reveal of at) {
+      const id = reveal.enter ?? reveal.select;
+      if (id) shown = shown.union(cy.getElementById(id));
+    }
+    clearHighlight();
+    if (shown.empty()) return 0;
+    // With what it joins, for where it is: a substation alone fills the view and says little.
+    const near = shown.union(shown.connectedNodes()).closedNeighborhood();
+    shown.addClass('highlighted');
+    cy.elements().not(near).addClass('dim');
+    highlighting = true;
+    cy.animate({ fit: { eles: near, padding: 60 } }, { duration: 200 });
+    return shown.length;
+  }
+
+  function clearHighlight() {
+    cy?.elements().removeClass('highlighted').removeClass('dim');
+    highlighting = false;
   }
 
   /** The grid's selection goes: what is selected elsewhere is not on it. */
@@ -363,6 +399,9 @@
         {/each}
         <option value="auto">Automatic</option>
       </select>
+    {/if}
+    {#if highlighting}
+      <button type="button" onclick={clearHighlight}>Clear highlight</button>
     {/if}
     {#if grid?.nodes.length}
       <input type="search" aria-label={inside ? 'Find equipment' : 'Find a substation'} placeholder={inside ? 'Find equipment' : 'Find a substation'} bind:value={query} oninput={find} />

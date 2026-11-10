@@ -78,6 +78,10 @@ async function handle(request: Request): Promise<string> {
       return session.findingsOf(request.rule);
     case 'datasets':
       return session.datasets();
+    case 'contingencies':
+      return session.contingencies();
+    case 'assessedElements':
+      return session.assessedElements();
   }
 }
 

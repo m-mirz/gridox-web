@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
+  import type { Reveal } from '../grid/model';
   import type { TreeEntry } from '../worker/protocol';
   import Details, { type Info } from './Details.svelte';
   import GridView from './GridView.svelte';
@@ -51,6 +52,11 @@
     if (!following && selection?.id) remember(selection.id);
     id = selection?.id ?? null;
     if (id) void tree?.reveal(id);
+  }
+
+  /** Shows `at` together on the grid; how many it could. */
+  export function highlight(at: Reveal[]): number {
+    return gridView?.highlight(at) ?? 0;
   }
 
   /** Shows the object `to` in the tree and the grid, and its details. */
