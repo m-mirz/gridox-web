@@ -17,6 +17,7 @@
     info,
     findingsVersion,
     onnavigate,
+    onback,
   }: {
     client: WorkerClient;
     id: string | null;
@@ -24,9 +25,12 @@
     /** Changes when the findings do. */
     findingsVersion: number;
     onnavigate: (id: string) => void;
+    /** Back to the object shown before, if there was one. */
+    onback: (() => void) | null;
   } = $props();
 
   let object = $state.raw<ObjectFields | null>(null);
+  let descriptions = $state(false);
 
   $effect(() => {
     void findingsVersion;
@@ -54,6 +58,10 @@
 </script>
 
 <aside data-testid="details">
+  {#if onback}
+    <button type="button" class="back" onclick={onback}>← Back</button>
+  {/if}
+
   {#if info}
     <h2>{info.heading}</h2>
     <p class="sub">{info.sub}</p>
@@ -74,9 +82,27 @@
     {/each}
   {:else if object}
     <h2>{object.label ?? object.id}</h2>
-    <p class="sub">{object.class}</p>
+    <p class="sub">{object.missing ? 'Not in these files' : object.class}</p>
   {:else}
     <p class="sub">Select an object in the tree, or a substation or a line in the grid.</p>
+  {/if}
+
+  {#if object}
+    {#if object.missing}
+      <p data-testid="missing">These files only refer to this object; another dataset, such as a boundary set, may define it.</p>
+    {/if}
+    {#if object.types.length}
+      <p class="note">Written as {object.types.join(', ')}, by different files.</p>
+    {/if}
+    {#if !object.missing && !object.defined}
+      <p class="note">These files only describe it (<code>rdf:about</code>); none defines it (<code>rdf:ID</code>).</p>
+    {/if}
+    {#if object.comment}
+      <details class="about">
+        <summary>About {object.class}</summary>
+        <p>{object.comment}</p>
+      </details>
+    {/if}
   {/if}
 
   {#if object?.findings.length}
@@ -92,17 +118,24 @@
     </ul>
   {/if}
 
-  {#if object}
-    <h3>As written</h3>
+  {#if object && !object.missing}
+    <div class="heading">
+      <h3>As written</h3>
+      <label><input type="checkbox" bind:checked={descriptions} /> Descriptions</label>
+    </div>
     <dl data-testid="fields">
-      <dt>mRID</dt>
+      <dt title="As the file writes it, in rdf:ID or rdf:about: not always IdentifiedObject.mRID">Identifier</dt>
       <dd>{object.id}</dd>
       {#each object.fields as field (field.key)}
-        <dt>{short(field.key)}</dt>
+        <dt title={field.comment || undefined}>
+          {short(field.key)}
+          {#if !field.declared}<span class="note">not in the class tables</span>{/if}
+        </dt>
+        {#if descriptions && field.comment}<dd class="comment">{field.comment}</dd>{/if}
         <dd>
           {#each field.values as value}
             {#if value.ref}
-              <button type="button" class="link" onclick={() => onnavigate(value.ref as string)}>{value.text}</button>
+              <button type="button" class="link" class:missing={value.missing} onclick={() => onnavigate(value.ref as string)}>{value.text}</button>
             {:else}
               <span>{value.text}</span>
             {/if}
@@ -110,6 +143,26 @@
         </dd>
       {/each}
     </dl>
+  {/if}
+
+  {#if object?.referrers.total}
+    <h3>Referred to by {object.referrers.total.toLocaleString('en')}</h3>
+    <div data-testid="referrers">
+      {#each object.referrers.by as group (group.key)}
+        <details open={object.referrers.by.length === 1 || group.count <= 5}>
+          <summary>{group.key} <span class="sub">{group.count.toLocaleString('en')}</span></summary>
+          <ul>
+            {#each group.objects as referrer (referrer.id)}
+              <li>
+                <button type="button" class="link" onclick={() => onnavigate(referrer.id)}>{referrer.label ?? referrer.id}</button>
+                <span class="sub">{referrer.class}</span>
+              </li>
+            {/each}
+          </ul>
+          {#if group.objects.length < group.count}<p class="sub">The first {group.objects.length} of them.</p>{/if}
+        </details>
+      {/each}
+    </div>
   {/if}
 </aside>
 
@@ -132,10 +185,20 @@
 
   p {
     margin: 0.25rem 0;
+    overflow-wrap: anywhere;
   }
 
   .sub {
     color: var(--muted);
+  }
+
+  .note {
+    color: var(--warn);
+    font-size: 0.85rem;
+  }
+
+  dt .note {
+    margin-left: 0.35rem;
   }
 
   button {
@@ -145,7 +208,29 @@
     font: inherit;
   }
 
-  .findings {
+  .back {
+    margin: 0 0 0.5rem;
+  }
+
+  .about summary {
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .heading label {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .findings,
+  ul {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -157,6 +242,16 @@
     flex-direction: column;
     margin-bottom: 0.4rem;
     overflow-wrap: anywhere;
+  }
+
+  [data-testid='referrers'] li {
+    overflow-wrap: anywhere;
+  }
+
+  [data-testid='referrers'] summary {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
   }
 
   .violation {
@@ -191,6 +286,11 @@
     display: block;
   }
 
+  dd.comment {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
   .link {
     margin: 0;
     padding: 0;
@@ -202,5 +302,9 @@
     text-decoration: underline;
     cursor: pointer;
     overflow-wrap: anywhere;
+  }
+
+  .link.missing {
+    text-decoration-style: dashed;
   }
 </style>

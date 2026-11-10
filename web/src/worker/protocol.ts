@@ -74,17 +74,42 @@ export interface SearchHit {
 
 export interface ObjectValue {
   text: string;
-  /** The object it refers to, if the set has it. */
+  /** The object it refers to: one in the set, or, `missing`, one only referred to. */
   ref?: string;
+  missing?: boolean;
+}
+
+export interface ObjectField {
+  key: string;
+  values: ObjectValue[];
+  /** Whether the class tables declare it for the object's class. */
+  declared: boolean;
+  /** The vocabulary's description of the attribute. */
+  comment: string;
+}
+
+/** The objects referring to one, by the field that does. */
+export interface Referrers {
+  total: number;
+  by: { key: string; count: number; objects: { id: string; class: string; label: string | null }[] }[];
 }
 
 export interface ObjectFields {
   id: string;
-  class: string;
+  /** `null` for an object the files only refer to. */
+  class: string | null;
+  missing?: boolean;
+  /** Every class the files write it as, when more than one. */
+  types: string[];
   label: string | null;
-  fields: { key: string; values: ObjectValue[] }[];
+  /** The vocabulary's description of the class. */
+  comment: string;
+  /** Whether a file defines it (`rdf:ID`), rather than only describing it (`rdf:about`). */
+  defined: boolean;
+  fields: ObjectField[];
   grid: Reveal | null;
   findings: ObjectFinding[];
+  referrers: Referrers;
 }
 
 /** Each request, by kind. */

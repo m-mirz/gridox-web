@@ -4,8 +4,9 @@
 use std::collections::BTreeMap;
 
 use cimmodel::CimDataset;
-use cimmodel::base::FieldValue;
+use cimmodel::base::{AttrKind, FieldValue};
 use cimmodel::decode::is_cim;
+use cimmodel::registry::type_registry;
 use cimvalidation::Violation;
 use cimview::grid::{self, Grid, Model};
 use cimview::tree::{self, Tree};
@@ -41,6 +42,9 @@ pub struct Summary {
 
 /// How many search hits the page lists.
 const SEARCH_LIMIT: usize = 100;
+
+/// How many of the objects referring to one the page lists.
+const REFERRERS_LIMIT: usize = 500;
 
 /// How many of one rule's findings the page lists.
 const FINDINGS_LIMIT: usize = 500;
@@ -315,48 +319,113 @@ impl Session {
         json!(self.views().tree.path(id, only_findings))
     }
 
-    /// The object `id` as written, its references resolved where the set has what they name.
+    /// The object `id` as written, its references resolved where the set has what they name, with
+    /// what the class tables say of it and what refers to it. An object the files only refer to
+    /// is `missing`, with its referrers; one nothing names is `null`.
     pub fn object(&mut self, id: &str) -> Value {
         self.views();
         let views = self.views.as_ref().expect("just built");
+        let referrers = self.referrers(id);
         let Some(element) = self.dataset.entries.get(id) else {
-            return Value::Null;
+            if referrers.0 == 0 {
+                return Value::Null;
+            }
+            return json!({
+                "id": id, "missing": true, "class": null, "types": [], "label": null, "comment": "",
+                "defined": false, "fields": [], "grid": views.grid.reveal(id),
+                "findings": self.findings_on(id), "referrers": referrers.1,
+            });
         };
         let text = |value: &str| json!({ "text": value });
-        let reference = |value: &str| {
+        // An enumeration's value is written as a reference is, to a vocabulary's IRI: no object.
+        let reference = |value: &str, enumeration: bool| {
             let target = mrid_of(value);
             match self.dataset.entries.get(target) {
                 Some(found) => json!({
                     "text": found.get_str("IdentifiedObject.name").unwrap_or(target),
                     "ref": target,
                 }),
-                None => json!({ "text": target }),
+                None if enumeration => json!({ "text": target }),
+                None => json!({ "text": target, "ref": target, "missing": true }),
             }
         };
-        let mut fields: Vec<(&str, Vec<Value>)> = element
+        let registry = type_registry();
+        let mut fields: Vec<(&str, Value)> = element
             .fields()
             .iter()
             .map(|(&key, value)| {
-                let values = match value {
+                // Declared by any of its types: an object merged from several files may have more than one.
+                let declared = element.types().find_map(|class| registry.attr(class, key));
+                let enumeration = declared.is_some_and(|a| matches!(a.kind, AttrKind::Enum));
+                let values: Vec<Value> = match value {
                     FieldValue::Text(value) => vec![text(value)],
                     FieldValue::TextList(values) => values.iter().map(|v| text(v)).collect(),
-                    FieldValue::Resource(value) => vec![reference(value)],
+                    FieldValue::Resource(value) => vec![reference(value, enumeration)],
                     FieldValue::ResourceList(values) => {
-                        values.iter().map(|v| reference(v)).collect()
+                        values.iter().map(|v| reference(v, enumeration)).collect()
                     }
                 };
-                (key, values)
+                let field = json!({
+                    "key": key, "values": values, "declared": declared.is_some(),
+                    "comment": declared.map_or("", |a| a.comment),
+                });
+                (key, field)
             })
             .collect();
         fields.sort_by_key(|field| field.0);
+        let types: Vec<&str> = element.types().map(|class| class.local).collect();
         json!({
             "id": id,
             "class": element.local_name(),
+            "types": if types.len() > 1 { types } else { Vec::new() },
             "label": element.get_str("IdentifiedObject.name"),
-            "fields": fields.into_iter().map(|(key, values)| json!({ "key": key, "values": values })).collect::<Vec<_>>(),
+            "comment": element.class().comment,
+            "defined": element.defined(),
+            "fields": fields.into_iter().map(|(_, field)| field).collect::<Vec<_>>(),
             "grid": views.grid.reveal(id),
             "findings": self.findings_on(id),
+            "referrers": referrers.1,
         })
+    }
+
+    /// The objects whose fields refer to `id`, by field, each list by name; how many there are, and
+    /// the first [`REFERRERS_LIMIT`] of them. Asked for when shown, so it costs no memory.
+    fn referrers(&self, id: &str) -> (usize, Value) {
+        let mut by_key: BTreeMap<&str, Vec<(&str, &cimmodel::Element)>> = BTreeMap::new();
+        for (source, element) in &self.dataset.entries {
+            for (&key, value) in element.fields() {
+                let names = match value {
+                    FieldValue::Resource(value) => mrid_of(value) == id,
+                    FieldValue::ResourceList(values) => values.iter().any(|v| mrid_of(v) == id),
+                    FieldValue::Text(_) | FieldValue::TextList(_) => false,
+                };
+                if names {
+                    by_key
+                        .entry(key)
+                        .or_default()
+                        .push((source.as_str(), element));
+                }
+            }
+        }
+        let total = by_key.values().map(Vec::len).sum();
+        let mut room = REFERRERS_LIMIT;
+        let label =
+            |e: &cimmodel::Element| e.get_str("IdentifiedObject.name").map(str::to_lowercase);
+        let groups = by_key.into_iter().map(|(key, mut objects)| {
+            objects.sort_by(|a, b| (label(a.1), a.0).cmp(&(label(b.1), b.0)));
+            let count = objects.len();
+            let listed = objects.into_iter().take(room).map(|(source, element)| {
+                json!({
+                    "id": source, "class": element.local_name(),
+                    "label": element.get_str("IdentifiedObject.name"),
+                })
+            });
+            let listed: Vec<Value> = listed.collect();
+            room -= listed.len();
+            json!({ "key": key, "count": count, "objects": listed })
+        });
+        let groups: Vec<Value> = groups.collect();
+        (total, json!({ "total": total, "by": groups }))
     }
 }
 
@@ -539,6 +608,110 @@ mod tests {
         assert!(container["ref"].is_string());
         assert_eq!(object["grid"]["enter"], ANVIL);
         assert!(grid_session().object("nothing").is_null());
+    }
+
+    const VOLTAGE_LEVEL: &str = "_00000000-0000-4000-8000-000000000a11";
+
+    #[test]
+    fn an_object_says_what_refers_to_it_by_field() {
+        let object = grid_session().object(VOLTAGE_LEVEL);
+        let referrers = &object["referrers"];
+        assert_eq!(referrers["total"], 3);
+        let keys: Vec<_> = referrers["by"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "ConnectivityNode.ConnectivityNodeContainer",
+                "Equipment.EquipmentContainer"
+            ]
+        );
+        let nodes: Vec<_> = referrers["by"][0]["objects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(nodes, ["Anvil bus", "Anvil line end"]);
+        assert_eq!(referrers["by"][1]["objects"][0]["id"], BREAKER);
+    }
+
+    #[test]
+    fn an_object_says_what_the_class_tables_say_of_its_fields() {
+        let mut session = Session::new();
+        let breaker = GRID.replace(
+            "<cim:Switch.normalOpen>false</cim:Switch.normalOpen>",
+            "<cim:Switch.normalOpen>false</cim:Switch.normalOpen>\n    <cim:Switch.colour>red</cim:Switch.colour>",
+        );
+        session.add_file("grid_EQ.xml", &breaker);
+        let object = session.object(BREAKER);
+        assert_eq!(object["defined"], true);
+        assert!(!object["comment"].as_str().unwrap().is_empty());
+        let field = |key: &str| {
+            object["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["key"] == key)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(field("Switch.normalOpen")["declared"], true);
+        assert!(
+            !field("Switch.normalOpen")["comment"]
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(field("Switch.colour")["declared"], false);
+        let mut session = Session::new();
+        let terminal = GRID.replacen(
+            "<cim:Terminal.ConductingEquipment",
+            "<cim:Terminal.phases rdf:resource=\"http://iec.ch/TC57/CIM100#PhaseCode.ABC\"/>\n    <cim:Terminal.ConductingEquipment",
+            1,
+        );
+        session.add_file("grid_EQ.xml", &terminal);
+        let object = session.object("_00000000-0000-4000-8000-000000000a40");
+        let phases = object["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == "Terminal.phases")
+            .unwrap();
+        // An enumeration's value is no object to go to.
+        assert_eq!(phases["values"][0], json!({ "text": "PhaseCode.ABC" }));
+    }
+
+    #[test]
+    fn an_object_only_referred_to_is_missing_and_says_who_refers_to_it() {
+        let mut session = Session::new();
+        let elsewhere = GRID.replace(
+            r##"<cim:VoltageLevel.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>"##,
+            r##"<cim:VoltageLevel.BaseVoltage rdf:resource="#_boundary"/>"##,
+        );
+        assert_ne!(elsewhere, GRID);
+        session.add_file("grid_EQ.xml", &elsewhere);
+        let object = session.object("_boundary");
+        assert_eq!(object["missing"], true);
+        assert_eq!(
+            object["referrers"]["by"][0]["key"],
+            "VoltageLevel.BaseVoltage"
+        );
+        let level = session.object(VOLTAGE_LEVEL);
+        let fields = level["fields"].as_array().unwrap();
+        let base = fields
+            .iter()
+            .find(|f| f["key"] == "VoltageLevel.BaseVoltage")
+            .unwrap();
+        assert_eq!(
+            base["values"][0],
+            json!({ "text": "_boundary", "ref": "_boundary", "missing": true })
+        );
+        assert!(session.object("_nobody").is_null());
     }
 
     #[test]

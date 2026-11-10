@@ -232,6 +232,28 @@ test.describe('browsing', () => {
     await expect(tree(page).locator('[aria-current="true"]')).toContainText('Anvil 110');
   });
 
+  test('an object says what refers to it, and Back returns', async ({ page }) => {
+    await tree(page).getByRole('searchbox').fill('anvil 110');
+    await page.getByTestId('hits').getByRole('button', { name: /Anvil 110/ }).click();
+    const referrers = page.getByTestId('referrers');
+    await expect(details(page).getByRole('heading', { name: 'Referred to by 3' })).toBeVisible();
+    await expect(referrers).toContainText('Equipment.EquipmentContainer');
+    await referrers.getByRole('button', { name: 'Breaker A' }).click();
+    await expect(details(page).getByRole('heading', { name: 'Breaker A' })).toBeVisible();
+    await details(page).getByRole('button', { name: '← Back' }).click();
+    await expect(details(page).getByRole('heading', { name: 'Anvil 110' })).toBeVisible();
+  });
+
+  test('a field can say what the vocabulary says of it', async ({ page }) => {
+    await tree(page).getByRole('searchbox').fill('breaker a');
+    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
+    const fields = page.getByTestId('fields');
+    await expect(fields).toContainText('Switch.normalOpen');
+    const before = (await fields.textContent())!.length;
+    await details(page).getByLabel('Descriptions').check();
+    await expect.poll(async () => (await fields.textContent())!.length).toBeGreaterThan(before);
+  });
+
   test('a page wide as a phone does not scroll sideways', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 700 });
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
