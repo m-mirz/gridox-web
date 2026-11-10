@@ -2,7 +2,7 @@
   import type { Reveal } from '../grid/model';
   import { count } from '../grid/model';
   import type { WorkerClient } from '../worker/client';
-  import type { AssessedElement, Contingency, Linked } from '../worker/protocol';
+  import type { AssessedElement, Contingency, Linked, RemedialAction, SwitchState } from '../worker/protocol';
   import Links from './Links.svelte';
 
   let {
@@ -21,7 +21,8 @@
 
   let contingencies = $state.raw<Contingency[]>([]);
   let assessed = $state.raw<AssessedElement[]>([]);
-  let tab = $state<'contingencies' | 'assessed'>('contingencies');
+  let actions = $state.raw<RemedialAction[]>([]);
+  let tab = $state<'contingencies' | 'assessed' | 'actions'>('contingencies');
   let filter = $state('');
   /** What the last "Show on grid" came to, when the grid showed none of it. */
   let notOnGrid = $state<string | null>(null);
@@ -29,14 +30,17 @@
   $effect(() => {
     void version;
     let current = true;
-    Promise.all([client.request<'contingencies'>({ kind: 'contingencies' }), client.request<'assessedElements'>({ kind: 'assessedElements' })]).then(
-      ([c, a]) => {
-        if (!current) return;
-        contingencies = c;
-        assessed = a;
-        tab = c.length || !a.length ? 'contingencies' : 'assessed';
-      },
-    );
+    Promise.all([
+      client.request<'contingencies'>({ kind: 'contingencies' }),
+      client.request<'assessedElements'>({ kind: 'assessedElements' }),
+      client.request<'remedialActions'>({ kind: 'remedialActions' }),
+    ]).then(([c, a, r]) => {
+      if (!current) return;
+      contingencies = c;
+      assessed = a;
+      actions = r;
+      tab = c.length ? 'contingencies' : a.length ? 'assessed' : 'actions';
+    });
     return () => {
       current = false;
     };
@@ -48,6 +52,16 @@
   };
   let shownContingencies = $derived(contingencies.filter(matches));
   let shownAssessed = $derived(assessed.filter(matches));
+  let shownActions = $derived(actions.filter(matches));
+  let shown = $derived(tab === 'contingencies' ? shownContingencies.length : tab === 'assessed' ? shownAssessed.length : shownActions.length);
+
+  /** A switch's state as the model gives it, and as the action leaves it. */
+  const position = (open: string | boolean | null) => (open === null ? 'not given' : open === true || open === 'true' ? 'open' : 'closed');
+  function applying(s: SwitchState): string {
+    if (s.openAfter === null) return 'no value for Switch.open';
+    if (s.changes === false) return `stays ${position(s.openAfter)}`;
+    return `${position(s.open)} → ${position(s.openAfter)}`;
+  }
 
   function show(row: { label: string | null; id: string; grid: Reveal[] }) {
     notOnGrid = onhighlight(row.grid) ? null : `The grid shows none of what ${row.label ?? row.id} is about.`;
@@ -56,7 +70,7 @@
   const one = (link: Linked | null) => (link ? [link] : []);
 </script>
 
-{#if contingencies.length || assessed.length}
+{#if contingencies.length || assessed.length || actions.length}
   <section aria-label="Network codes" data-testid="network-codes">
     <details open>
       <summary><h2>Network codes</h2></summary>
@@ -66,6 +80,9 @@
         </button>
         <button type="button" role="tab" aria-selected={tab === 'assessed'} onclick={() => (tab = 'assessed')}>
           Assessed elements <span class="sub">{assessed.length.toLocaleString('en')}</span>
+        </button>
+        <button type="button" role="tab" aria-selected={tab === 'actions'} onclick={() => (tab = 'actions')}>
+          Remedial actions <span class="sub">{actions.length.toLocaleString('en')}</span>
         </button>
         <input type="search" placeholder="Filter by name or mRID" aria-label="Filter the table" bind:value={filter} />
       </div>
@@ -85,6 +102,49 @@
                   <td>{row.mustStudy ?? ''}</td>
                   <td><Links links={row.equipment} {onnavigate} /></td>
                   <td><Links links={row.assessed} {onnavigate} /></td>
+                  <td><button type="button" disabled={!row.grid.length} onclick={() => show(row)}>Show on grid</button></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else if tab === 'actions'}
+          <table data-testid="remedial-actions">
+            <thead>
+              <tr><th>Remedial action</th><th>Class, kind</th><th>Available</th><th>Alterations</th><th>Dependencies</th><th>Applied</th><th></th></tr>
+            </thead>
+            <tbody>
+              {#each shownActions as row (row.id)}
+                <tr>
+                  <td><Links links={[{ id: row.id, label: row.label, class: row.class }]} {onnavigate} /></td>
+                  <td>{row.class}{row.kind ? `, ${row.kind}` : ''}</td>
+                  <td>{row.available ?? ''}</td>
+                  <td>
+                    {#each row.alterations as alteration (alteration.id)}
+                      <div class="part">
+                        <Links inline links={[{ id: alteration.id, label: alteration.label ?? alteration.class, class: alteration.class }]} {onnavigate} />
+                        {#if alteration.target}<span class="sub">on</span> <Links inline links={[alteration.target]} {onnavigate} />{/if}
+                        {#each alteration.values as v}
+                          <small class="value">{v.property ?? '?'} = {v.value ?? '?'}{v.valueKind ? ` (${v.valueKind})` : ''}</small>
+                        {/each}
+                      </div>
+                    {/each}
+                  </td>
+                  <td>
+                    {#each row.dependencies as dependency (dependency.id)}
+                      <div class="part">
+                        {dependency.kind ?? ''} {#if dependency.group}<span class="sub">in</span> <Links inline links={[dependency.group]} {onnavigate} />{/if}
+                        {#if dependency.with.length}<span class="sub">with</span> <Links inline links={dependency.with} {onnavigate} />{/if}
+                      </div>
+                    {/each}
+                  </td>
+                  <td data-testid="applied">
+                    {#each row.applied as s (s.id)}
+                      <div class="part" class:same={s.changes === false}>
+                        <Links links={[s]} {onnavigate} />
+                        <small>{applying(s)}</small>
+                      </div>
+                    {/each}
+                  </td>
                   <td><button type="button" disabled={!row.grid.length} onclick={() => show(row)}>Show on grid</button></td>
                 </tr>
               {/each}
@@ -118,7 +178,7 @@
           </table>
         {/if}
       </div>
-      <p class="sub">{count(tab === 'contingencies' ? shownContingencies.length : shownAssessed.length, 'row')} shown.</p>
+      <p class="sub">{count(shown, 'row')} shown.{#if tab === 'actions'}{' '}Applied: the switch states its topology actions set, where a range gives <code>Switch.open</code> an absolute value; nothing is solved.{/if}</p>
     </details>
   </section>
 {/if}
@@ -185,5 +245,18 @@
 
   .sub {
     color: var(--muted);
+  }
+
+  .part + .part {
+    margin-top: 0.4rem;
+  }
+
+  .value {
+    display: block;
+    color: var(--muted);
+  }
+
+  .same small {
+    color: var(--warn);
   }
 </style>

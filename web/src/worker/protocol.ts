@@ -161,6 +161,32 @@ export interface AssessedElement {
   grid: Reveal[];
 }
 
+/** What applying a remedial action does to a switch: `open` as the model has it, `openAfter` as applied. */
+export interface SwitchState extends Linked {
+  open: string | null;
+  openAfter: boolean | null;
+  changes: boolean | null;
+}
+
+export interface RemedialAction {
+  id: string;
+  label: string | null;
+  class: string;
+  kind: string | null;
+  available: string | null;
+  alterations: {
+    id: string;
+    class: string;
+    label: string | null;
+    target: Linked | null;
+    enabled: string | null;
+    values: { property: string | null; valueKind: string | null; direction: string | null; value: string | null }[];
+  }[];
+  dependencies: { id: string; kind: string | null; group: Linked | null; with: Linked[] }[];
+  applied: SwitchState[];
+  grid: Reveal[];
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -190,7 +216,8 @@ export type Request =
   | { kind: 'findings'; rule: string }
   | { kind: 'datasets' }
   | { kind: 'contingencies' }
-  | { kind: 'assessedElements' };
+  | { kind: 'assessedElements' }
+  | { kind: 'remedialActions' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -208,6 +235,7 @@ export interface Answers {
   datasets: Datasets | null;
   contingencies: Contingency[];
   assessedElements: AssessedElement[];
+  remedialActions: RemedialAction[];
 }
 
 export type Envelope = { id: number; request: Request };

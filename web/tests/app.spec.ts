@@ -9,6 +9,7 @@ const SSH = fixture('small_SSH.xml');
 const GRID = fixture('grid_EQ.xml');
 const SECOND = fixture('second_EQ.xml');
 const NC = fixture('nc_CO_AE.xml');
+const RA = fixture('nc_RA.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -68,6 +69,9 @@ test.describe('real drags', () => {
 
   test('onto the grid, adding to a model', async ({ page }) => {
     await input(page).setInputFiles(GRID);
+    // Once validation's panels are in, which move the grid down, and with the grid in view.
+    await expect(page.getByTestId('datasets-summary')).toBeVisible();
+    await page.getByTestId('graph').scrollIntoViewIfNeeded();
     const graph = await page.getByTestId('graph').boundingBox();
     await drag(page, { files: [EQ] }, graph!.x + 50, graph!.y + 50);
     await expect(page.getByTestId('totals')).toContainText('from 2 files');
@@ -400,6 +404,20 @@ test.describe('network codes', () => {
     await page.getByTestId('contingencies').getByRole('button', { name: 'Loss of Anvil-Birch' }).click();
     await expect(page.getByTestId('details').getByRole('heading', { name: 'Loss of Anvil-Birch' })).toBeVisible();
     await expect(page.getByTestId('referrers')).toContainText('ContingencyElement.Contingency');
+  });
+
+  test('a remedial action says what it changes, and what applying it gives', async ({ page }) => {
+    await input(page).setInputFiles(RA);
+    await page.getByRole('tab', { name: /Remedial actions/ }).click();
+    const table = page.getByTestId('remedial-actions');
+    const open = table.getByRole('row', { name: /^Open Breaker A/ });
+    await expect(open).toContainText('Switch.open = 1.0 (absolute)');
+    await expect(open).toContainText('exclusive');
+    await expect(open).toContainText('Keep Breaker A closed');
+    await expect(open.getByTestId('applied')).toContainText('closed → open');
+    await expect(table.getByRole('row', { name: /^Keep Breaker A closed/ }).getByTestId('applied')).toContainText('stays closed');
+    await open.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
   });
 
   test('filters by name', async ({ page }) => {

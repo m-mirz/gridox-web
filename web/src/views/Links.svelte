@@ -2,11 +2,15 @@
   import type { Linked } from '../worker/protocol';
 
   /** Objects linked to from a table cell, each a link to its page, with what the link says of it. */
-  let { links, onnavigate }: { links: Linked[]; onnavigate: (id: string) => void } = $props();
+  let {
+    links,
+    onnavigate,
+    inline = false,
+  }: { links: Linked[]; onnavigate: (id: string) => void; /** Within a line of text, not one per line. */ inline?: boolean } = $props();
 </script>
 
 {#each links as link (link.id)}
-  <span class="link-cell">
+  <span class="link-cell" class:inline>
     <button type="button" class="link" class:missing={link.missing} title={link.missing ? 'Not in the files loaded' : (link.class ?? undefined)} onclick={() => onnavigate(link.id)}>{link.label ?? link.id}</button>
     {#if link.status ?? link.kind}<small>{link.status ?? link.kind}</small>{/if}
   </span>
@@ -16,6 +20,10 @@
   .link-cell {
     display: block;
     overflow-wrap: anywhere;
+  }
+
+  .link-cell.inline {
+    display: inline;
   }
 
   .link {

@@ -81,6 +81,11 @@ impl JsSession {
         self.0.contingencies().to_string()
     }
 
+    #[wasm_bindgen(js_name = remedialActions)]
+    pub fn remedial_actions(&mut self) -> String {
+        self.0.remedial_actions().to_string()
+    }
+
     #[wasm_bindgen(js_name = assessedElements)]
     pub fn assessed_elements(&mut self) -> String {
         self.0.assessed_elements().to_string()

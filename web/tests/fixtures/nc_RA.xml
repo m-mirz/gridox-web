@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:nc="https://cim4.eu/ns/nc#"
+    xmlns:cim="https://cim.ucaiug.io/ns#"
+    xmlns:cim100="http://iec.ch/TC57/CIM100#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:dcat="http://www.w3.org/ns/dcat#" >
+  <dcat:Dataset rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f04">
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/RemedialAction/2.4"/>
+  </dcat:Dataset>
+  <!-- The breaker's state, as an SSH file would give it. -->
+  <cim100:Breaker rdf:about="#_00000000-0000-4000-8000-000000000a30">
+    <cim100:Switch.open>false</cim100:Switch.open>
+  </cim100:Breaker>
+  <nc:GridStateAlterationRemedialAction rdf:ID="_00000000-0000-4000-8000-000000000d01">
+    <cim:IdentifiedObject.name>Open Breaker A</cim:IdentifiedObject.name>
+    <nc:RemedialAction.kind rdf:resource="https://cim4.eu/ns/nc#RemedialActionKind.preventive"/>
+    <nc:RemedialAction.normalAvailable>true</nc:RemedialAction.normalAvailable>
+  </nc:GridStateAlterationRemedialAction>
+  <nc:TopologyAction rdf:ID="_00000000-0000-4000-8000-000000000d02">
+    <nc:GridStateAlteration.GridStateAlterationRemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d01"/>
+    <nc:GridStateAlteration.PropertyReference rdf:resource="http://iec.ch/TC57/CIM100#Switch.open"/>
+    <nc:GridStateAlteration.normalEnabled>true</nc:GridStateAlteration.normalEnabled>
+    <cim:IdentifiedObject.name>TA open</cim:IdentifiedObject.name>
+    <nc:TopologyAction.Switch rdf:resource="#_00000000-0000-4000-8000-000000000a30"/>
+  </nc:TopologyAction>
+  <nc:StaticPropertyRange rdf:ID="_00000000-0000-4000-8000-000000000d03">
+    <nc:RangeConstraint.GridStateAlteration rdf:resource="#_00000000-0000-4000-8000-000000000d02"/>
+    <nc:RangeConstraint.direction rdf:resource="https://cim4.eu/ns/nc#RelativeDirectionKind.none"/>
+    <nc:RangeConstraint.normalValue>1.0</nc:RangeConstraint.normalValue>
+    <nc:RangeConstraint.valueKind rdf:resource="https://cim4.eu/ns/nc#ValueOffsetKind.absolute"/>
+    <nc:StaticPropertyRange.PropertyReference rdf:resource="http://iec.ch/TC57/CIM100#Switch.open"/>
+  </nc:StaticPropertyRange>
+  <nc:GridStateAlterationRemedialAction rdf:ID="_00000000-0000-4000-8000-000000000d11">
+    <cim:IdentifiedObject.name>Keep Breaker A closed</cim:IdentifiedObject.name>
+    <nc:RemedialAction.kind rdf:resource="https://cim4.eu/ns/nc#RemedialActionKind.curative"/>
+  </nc:GridStateAlterationRemedialAction>
+  <nc:TopologyAction rdf:ID="_00000000-0000-4000-8000-000000000d12">
+    <nc:GridStateAlteration.GridStateAlterationRemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d11"/>
+    <cim:IdentifiedObject.name>TA closed</cim:IdentifiedObject.name>
+    <nc:TopologyAction.Switch rdf:resource="#_00000000-0000-4000-8000-000000000a30"/>
+  </nc:TopologyAction>
+  <nc:StaticPropertyRange rdf:ID="_00000000-0000-4000-8000-000000000d13">
+    <nc:RangeConstraint.GridStateAlteration rdf:resource="#_00000000-0000-4000-8000-000000000d12"/>
+    <nc:RangeConstraint.normalValue>0.0</nc:RangeConstraint.normalValue>
+    <nc:RangeConstraint.valueKind rdf:resource="https://cim4.eu/ns/nc#ValueOffsetKind.absolute"/>
+    <nc:StaticPropertyRange.PropertyReference rdf:resource="http://iec.ch/TC57/CIM100#Switch.open"/>
+  </nc:StaticPropertyRange>
+  <nc:RemedialActionGroup rdf:ID="_00000000-0000-4000-8000-000000000d20">
+    <cim:IdentifiedObject.name>Breaker A either way</cim:IdentifiedObject.name>
+  </nc:RemedialActionGroup>
+  <nc:RemedialActionDependency rdf:ID="_00000000-0000-4000-8000-000000000d21">
+    <nc:RemedialActionDependency.DependingRemedialActionGroup rdf:resource="#_00000000-0000-4000-8000-000000000d20"/>
+    <nc:RemedialActionDependency.RemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d01"/>
+    <nc:RemedialActionDependency.kind rdf:resource="https://cim4.eu/ns/nc#RemedialActionDependencyKind.exclusive"/>
+  </nc:RemedialActionDependency>
+  <nc:RemedialActionDependency rdf:ID="_00000000-0000-4000-8000-000000000d22">
+    <nc:RemedialActionDependency.DependingRemedialActionGroup rdf:resource="#_00000000-0000-4000-8000-000000000d20"/>
+    <nc:RemedialActionDependency.RemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d11"/>
+    <nc:RemedialActionDependency.kind rdf:resource="https://cim4.eu/ns/nc#RemedialActionDependencyKind.exclusive"/>
+  </nc:RemedialActionDependency>
+</rdf:RDF>

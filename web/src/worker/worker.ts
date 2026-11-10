@@ -82,6 +82,8 @@ async function handle(request: Request): Promise<string> {
       return session.contingencies();
     case 'assessedElements':
       return session.assessedElements();
+    case 'remedialActions':
+      return session.remedialActions();
   }
 }
 

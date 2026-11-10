@@ -809,6 +809,223 @@ impl Session {
     }
 }
 
+/// Remedial actions: what each changes, on what, with which dependencies, and the switch states
+/// that applying it gives.
+impl Session {
+    /// Which objects refer to which through each of `keys`: target → (source, key).
+    fn referrers_by<'a>(
+        &'a self,
+        keys: &[&str],
+    ) -> BTreeMap<&'a str, Vec<(&'a str, &'static str)>> {
+        let mut by: BTreeMap<&str, Vec<(&str, &'static str)>> = BTreeMap::new();
+        for (source, element) in &self.dataset.entries {
+            for (&key, value) in element.fields() {
+                if !keys.contains(&key) {
+                    continue;
+                }
+                let targets: Vec<&str> = match value {
+                    FieldValue::Resource(v) => vec![mrid_of(v)],
+                    FieldValue::ResourceList(vs) => vs.iter().map(|v| mrid_of(v)).collect(),
+                    FieldValue::Text(_) | FieldValue::TextList(_) => continue,
+                };
+                for target in targets {
+                    by.entry(target).or_default().push((source.as_str(), key));
+                }
+            }
+        }
+        for list in by.values_mut() {
+            list.sort_unstable();
+        }
+        by
+    }
+
+    /// Where the grid shows `id`, else the first thing within two references of it that it shows:
+    /// a tap changer's transformer, a regulating control's equipment, at worst a container.
+    fn place_on_grid(&mut self, id: &str) -> Option<Value> {
+        self.views();
+        let views = self.views.as_ref().expect("just built");
+        let mut level = vec![id.to_string()];
+        for _ in 0..3 {
+            let mut next = Vec::new();
+            for at in &level {
+                if let Some(found) = views.grid.reveal(at) {
+                    return Some(found);
+                }
+                let Some(element) = self.dataset.entries.get(at) else {
+                    continue;
+                };
+                let mut keys: Vec<_> = element.fields().iter().collect();
+                keys.sort_by_key(|(k, _)| **k);
+                for (_, value) in keys {
+                    match value {
+                        FieldValue::Resource(v) => next.push(mrid_of(v).to_string()),
+                        FieldValue::ResourceList(vs) => {
+                            next.extend(vs.iter().map(|v| mrid_of(v).to_string()))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            level = next;
+        }
+        None
+    }
+
+    /// The remedial actions: their kind and availability; each alteration with what it targets
+    /// and the values its ranges set; their dependencies and the actions sharing a group with
+    /// them; and, applied, the switch states their topology actions give, as cimoxide's harness
+    /// reads them: open where the range on `Switch.open` gives an absolute value other than 0.
+    pub fn remedial_actions(&mut self) -> Value {
+        let links = self.referrers_by(&[
+            "GridStateAlteration.GridStateAlterationRemedialAction",
+            "RangeConstraint.GridStateAlteration",
+            "RemedialActionDependency.RemedialAction",
+            "RemedialActionDependency.DependingRemedialActionGroup",
+        ]);
+        let of = |target: &str, key: &str| -> Vec<&str> {
+            links.get(target).map_or(Vec::new(), |list| {
+                list.iter()
+                    .filter(|(_, k)| *k == key)
+                    .map(|(s, _)| *s)
+                    .collect()
+            })
+        };
+        let mut classes: Vec<&str> = self
+            .dataset
+            .by_type
+            .keys()
+            .map(|k| k.rsplit_once(':').map_or(k.as_str(), |(_, n)| n))
+            .filter(|n| n.ends_with("RemedialAction") && !n.contains("With"))
+            .collect();
+        classes.sort_unstable();
+        classes.dedup();
+        let mut rows = Vec::new();
+        let mut targets_of_rows = Vec::new();
+        for class in classes {
+            for (id, element) in self.of_type(class) {
+                let mut alterations = Vec::new();
+                let mut applied = Vec::new();
+                let mut targets = Vec::new();
+                for alteration_id in of(id, "GridStateAlteration.GridStateAlterationRemedialAction")
+                {
+                    let Some(alteration) = self.dataset.entries.get(alteration_id) else {
+                        continue;
+                    };
+                    // What it acts on: its one reference of its own class.
+                    let mut own: Vec<(&str, &str)> = alteration
+                        .fields()
+                        .iter()
+                        .filter(|(k, _)| {
+                            !k.starts_with("GridStateAlteration.")
+                                && !k.starts_with("IdentifiedObject.")
+                        })
+                        .filter_map(|(&k, v)| match v {
+                            FieldValue::Resource(v) => Some((k, mrid_of(v))),
+                            _ => None,
+                        })
+                        .collect();
+                    own.sort_unstable();
+                    let target = own.first().map(|(_, t)| *t);
+                    targets.extend(target.map(str::to_string));
+                    let ranges: Vec<&cimmodel::Element> =
+                        of(alteration_id, "RangeConstraint.GridStateAlteration")
+                            .into_iter()
+                            .filter_map(|r| self.dataset.entries.get(r))
+                            .collect();
+                    let values: Vec<Value> = ranges
+                        .iter()
+                        .map(|r| {
+                            json!({
+                                "property": Self::text(r, "StaticPropertyRange.PropertyReference"),
+                                "valueKind": Self::text(r, "RangeConstraint.valueKind"),
+                                "direction": Self::text(r, "RangeConstraint.direction"),
+                                "value": r.get_str("RangeConstraint.normalValue"),
+                            })
+                        })
+                        .collect();
+                    if alteration.local_name() == "TopologyAction"
+                        && let Some(switch) =
+                            alteration.get_ref("TopologyAction.Switch").map(mrid_of)
+                    {
+                        let absolute: Vec<f64> = ranges
+                            .iter()
+                            .filter(|r| {
+                                Self::text(r, "StaticPropertyRange.PropertyReference").as_deref()
+                                    == Some("Switch.open")
+                            })
+                            .filter(|r| {
+                                Self::text(r, "RangeConstraint.valueKind").as_deref()
+                                    == Some("absolute")
+                            })
+                            .filter_map(|r| r.get_f64("RangeConstraint.normalValue"))
+                            .collect();
+                        let after = absolute.last().map(|v| *v != 0.0);
+                        let now = self
+                            .dataset
+                            .entries
+                            .get(switch)
+                            .and_then(|s| s.get_str("Switch.open"));
+                        let mut cell = self.linked(switch);
+                        cell["open"] = json!(now);
+                        cell["openAfter"] = json!(after);
+                        cell["changes"] = json!(match (now, after) {
+                            (Some(now), Some(after)) => Some((now == "true") != after),
+                            _ => None,
+                        });
+                        applied.push(cell);
+                    }
+                    alterations.push(json!({
+                        "id": alteration_id, "class": alteration.local_name(),
+                        "label": alteration.get_str("IdentifiedObject.name"),
+                        "target": target.map(|t| self.linked(t)),
+                        "enabled": Self::text(alteration, "GridStateAlteration.normalEnabled"),
+                        "values": values,
+                    }));
+                }
+                let dependencies: Vec<Value> = of(id, "RemedialActionDependency.RemedialAction")
+                    .into_iter()
+                    .filter_map(|d| Some((d, self.dataset.entries.get(d)?)))
+                    .map(|(d, dependency)| {
+                        let group = dependency.get_ref("RemedialActionDependency.DependingRemedialActionGroup").map(mrid_of);
+                        let others: Vec<Value> = group
+                            .map(|g| of(g, "RemedialActionDependency.DependingRemedialActionGroup"))
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|other| *other != d)
+                            .filter_map(|other| self.dataset.entries.get(other)?.get_ref("RemedialActionDependency.RemedialAction"))
+                            .map(|ra| self.linked(mrid_of(ra)))
+                            .collect();
+                        json!({
+                            "id": d, "kind": Self::text(dependency, "RemedialActionDependency.kind"),
+                            "group": group.map(|g| self.linked(g)), "with": others,
+                        })
+                    })
+                    .collect();
+                rows.push(json!({
+                    "id": id, "label": element.get_str("IdentifiedObject.name"), "class": class,
+                    "kind": Self::text(element, "RemedialAction.kind"),
+                    "available": Self::text(element, "RemedialAction.normalAvailable"),
+                    "alterations": alterations, "dependencies": dependencies, "applied": applied,
+                }));
+                targets_of_rows.push(targets);
+            }
+        }
+        let rows = rows
+            .into_iter()
+            .zip(targets_of_rows)
+            .map(|(mut row, targets)| {
+                let places: Vec<Value> = targets
+                    .iter()
+                    .filter_map(|t| self.place_on_grid(t))
+                    .collect();
+                row["grid"] = json!(places);
+                row
+            })
+            .collect();
+        Value::Array(rows)
+    }
+}
+
 impl Session {
     /// What validation found on the object `id`.
     fn findings_on(&self, id: &str) -> Vec<Value> {
@@ -1229,11 +1446,88 @@ mod tests {
         assert_eq!(scanned["grid"][0]["enter"], ANVIL);
     }
 
+    const RA: &str = include_str!("../../../web/tests/fixtures/nc_RA.xml");
+
+    fn with_ra() -> Session {
+        let mut session = grid_session();
+        session.add_file("nc_RA.xml", RA);
+        session
+    }
+
+    #[test]
+    fn the_remedial_action_fixture_decodes_as_declared() {
+        let mut session = with_ra();
+        for id in ["d01", "d02", "d03", "d20", "d21"] {
+            let object = session.object(&format!("_00000000-0000-4000-8000-000000000{id}"));
+            assert_eq!(object["foreign"], false, "{id}");
+            let undeclared: Vec<_> = object["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f["declared"] == false)
+                .collect();
+            assert!(undeclared.is_empty(), "{id}: {undeclared:?}");
+        }
+    }
+
+    #[test]
+    fn a_remedial_action_says_what_it_changes_and_what_applying_it_gives() {
+        let rows = with_ra().remedial_actions();
+        let rows = rows.as_array().unwrap();
+        let open = rows
+            .iter()
+            .find(|r| r["label"] == "Open Breaker A")
+            .unwrap();
+        assert_eq!(open["kind"], "preventive");
+        let alteration = &open["alterations"][0];
+        assert_eq!(alteration["class"], "TopologyAction");
+        assert_eq!(alteration["target"]["id"], BREAKER);
+        assert_eq!(alteration["enabled"], "true");
+        assert_eq!(
+            alteration["values"][0],
+            json!({ "property": "Switch.open", "valueKind": "absolute", "direction": "none", "value": "1.0" })
+        );
+        let applied = &open["applied"][0];
+        assert_eq!(
+            (
+                applied["open"].clone(),
+                applied["openAfter"].clone(),
+                applied["changes"].clone()
+            ),
+            (json!("false"), json!(true), json!(true))
+        );
+        assert_eq!(open["grid"][0]["enter"], ANVIL);
+        // As RA_UC1's: an absolute value of 0 leaves a closed switch closed.
+        let closed = rows
+            .iter()
+            .find(|r| r["label"] == "Keep Breaker A closed")
+            .unwrap();
+        assert_eq!(closed["applied"][0]["openAfter"], false);
+        assert_eq!(closed["applied"][0]["changes"], false);
+    }
+
+    #[test]
+    fn a_remedial_action_says_which_actions_share_its_group() {
+        let rows = with_ra().remedial_actions();
+        let open = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["label"] == "Open Breaker A")
+            .unwrap()
+            .clone();
+        let dependency = &open["dependencies"][0];
+        assert_eq!(dependency["kind"], "exclusive");
+        assert_eq!(dependency["group"]["label"], "Breaker A either way");
+        assert_eq!(dependency["with"][0]["label"], "Keep Breaker A closed");
+    }
+
     #[test]
     fn a_model_without_network_codes_has_empty_tables() {
         let mut session = grid_session();
         assert_eq!(session.contingencies(), json!([]));
         assert_eq!(session.assessed_elements(), json!([]));
+        assert_eq!(session.remedial_actions(), json!([]));
     }
 
     #[test]
