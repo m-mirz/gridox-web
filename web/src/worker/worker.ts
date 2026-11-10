@@ -76,6 +76,8 @@ async function handle(request: Request): Promise<string> {
       return session.validate(request.common, request.quality);
     case 'findings':
       return session.findingsOf(request.rule);
+    case 'datasets':
+      return session.datasets();
   }
 }
 

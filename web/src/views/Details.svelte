@@ -91,6 +91,14 @@
     {#if object.missing}
       <p data-testid="missing">These files only refer to this object; another dataset, such as a boundary set, may define it.</p>
     {/if}
+    {#if object.foreign}
+      <p class="sub">Reference data, outside the CIM class tables.</p>
+    {/if}
+    {#if object.definedIn.length > 1}
+      <p class="note" data-testid="defined-in">Defined by {object.definedIn.length} files: {object.definedIn.join(', ')}.</p>
+    {:else if object.definedIn.length}
+      <p class="sub" data-testid="defined-in">Defined by {object.definedIn[0]}.</p>
+    {/if}
     {#if object.types.length}
       <p class="note">Written as {object.types.join(', ')}, by different files.</p>
     {/if}
@@ -129,7 +137,7 @@
       {#each object.fields as field (field.key)}
         <dt title={field.comment || undefined}>
           {short(field.key)}
-          {#if !field.declared}<span class="note">not in the class tables</span>{/if}
+          {#if !field.declared && !object.foreign}<span class="note">not in the class tables</span>{/if}
         </dt>
         {#if descriptions && field.comment}<dd class="comment">{field.comment}</dd>{/if}
         <dd>

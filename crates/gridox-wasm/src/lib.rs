@@ -77,6 +77,10 @@ impl JsSession {
         self.0.findings().to_string()
     }
 
+    pub fn datasets(&self) -> String {
+        self.0.datasets().to_string()
+    }
+
     #[wasm_bindgen(js_name = findingsOf)]
     pub fn findings_of(&self, rule: &str) -> String {
         self.0.findings_of(rule).to_string()

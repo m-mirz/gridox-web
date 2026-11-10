@@ -7,6 +7,7 @@ const fixture = (name: string) => join(import.meta.dirname, 'fixtures', name);
 const EQ = fixture('small_EQ.xml');
 const SSH = fixture('small_SSH.xml');
 const GRID = fixture('grid_EQ.xml');
+const SECOND = fixture('second_EQ.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -327,6 +328,42 @@ test.describe('validation', () => {
     await input(page).setInputFiles(GRID);
     await expect(page.getByLabel('Modelling-quality checks')).toBeChecked();
     await expect(page.getByLabel('Common cross-profile checks')).toBeChecked();
+  });
+});
+
+test.describe('datasets', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, SECOND]);
+    await expect(page.getByTestId('datasets-summary')).toBeVisible();
+  });
+
+  test('say what is defined twice and which header references are not loaded', async ({ page }) => {
+    const summary = page.getByTestId('datasets-summary');
+    await expect(summary).toContainText('2 files');
+    await expect(summary).toContainText('1 object defined more than once');
+    await expect(summary).toContainText('1 header reference not loaded');
+    await summary.click();
+    await page.getByTestId('twice').getByRole('button', { name: 'Breaker A' }).click();
+    await expect(page.getByTestId('defined-in')).toContainText('Defined by 2 files: grid_EQ.xml, second_EQ.xml');
+  });
+
+  test('a header shows where its references lead', async ({ page }) => {
+    await page.getByTestId('datasets-summary').click();
+    const files = page.getByTestId('dataset-files');
+    await files.getByText('second_EQ.xml').click();
+    await expect(files.locator('.missing')).toHaveText('urn:uuid:not-loaded not loaded');
+    await files.getByRole('button', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' })).toBeVisible();
+    await expect(page.getByTestId('referrers')).toContainText('Model.DependentOn');
+  });
+
+  test('reference data has a page of its own', async ({ page }) => {
+    await page.getByTestId('tree').getByRole('searchbox').fill('breaker a');
+    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
+    await page.getByTestId('fields').getByRole('button', { name: 'A concept' }).click();
+    const details = page.getByTestId('details');
+    await expect(details).toContainText('Reference data, outside the CIM class tables.');
+    await expect(page.getByTestId('referrers')).toContainText('Switch.concept');
   });
 });
 

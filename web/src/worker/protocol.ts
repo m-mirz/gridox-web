@@ -110,6 +110,30 @@ export interface ObjectFields {
   grid: Reveal | null;
   findings: ObjectFinding[];
   referrers: Referrers;
+  /** Reference data (SKOS, PROV, DCAT, …), outside the CIM class tables. */
+  foreign?: boolean;
+  /** The files that define it, once validation has read them one by one. */
+  definedIn: string[];
+}
+
+/** A header's reference, as an object page shows a value. */
+export interface HeaderRef {
+  key: string;
+  values: ObjectValue[];
+}
+
+/** The datasets loaded, as validation read them one by one. */
+export interface Datasets {
+  files: {
+    name: string;
+    objects: number;
+    foreign: number;
+    header: { id: string; class: string; profiles: string[]; refs: HeaderRef[] } | null;
+  }[];
+  /** Objects more than one file defines. */
+  twice: { count: number; objects: { id: string; label: string | null; class: string | null; files: string[] }[] };
+  /** Objects the files type with unrelated classes. */
+  conflicts: { count: number; objects: { id: string; label: string | null; types: string[] }[] };
 }
 
 /** Each request, by kind. */
@@ -124,7 +148,8 @@ export type Request =
   | { kind: 'path'; id: string; onlyFindings: boolean }
   | { kind: 'object'; id: string }
   | ({ kind: 'validate' } & Checks)
-  | { kind: 'findings'; rule: string };
+  | { kind: 'findings'; rule: string }
+  | { kind: 'datasets' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -139,6 +164,7 @@ export interface Answers {
   object: ObjectFields | null;
   validate: FindingsSummary;
   findings: Finding[];
+  datasets: Datasets | null;
 }
 
 export type Envelope = { id: number; request: Request };

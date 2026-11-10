@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { droppedFiles } from './drop';
   import Browse from './views/Browse.svelte';
+  import DatasetsView from './views/DatasetsView.svelte';
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
   import SummaryView from './views/SummaryView.svelte';
@@ -188,6 +189,7 @@
     <SummaryView {summary} />
     {#if objects}
       <FindingsView {client} {findings} {checking} {checks} onchecks={changeChecks} onnavigate={(id) => browse?.navigate(id)} />
+      <DatasetsView {client} {findingsVersion} onnavigate={(id) => browse?.navigate(id)} />
       <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} />
     {/if}
   {/if}

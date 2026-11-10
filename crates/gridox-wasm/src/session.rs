@@ -46,6 +46,13 @@ const SEARCH_LIMIT: usize = 100;
 /// How many of the objects referring to one the page lists.
 const REFERRERS_LIMIT: usize = 500;
 
+/// How many objects defined twice, or typed with unrelated classes, the page lists.
+const DATASET_LIMIT: usize = 500;
+
+/// The classes of a dataset's header: CGMES's `md:FullModel` and `md:DifferenceModel`, NC's
+/// `dcat:Dataset`.
+const HEADERS: [&str; 3] = ["FullModel", "DifferenceModel", "Dataset"];
+
 /// How many of one rule's findings the page lists.
 const FINDINGS_LIMIT: usize = 500;
 
@@ -57,6 +64,23 @@ const SEVERITIES: [&str; 3] = ["sh:Violation", "sh:Warning", "sh:Info"];
 pub struct Checks {
     pub common: bool,
     pub quality: bool,
+}
+
+/// What only the files one by one say, gathered while validation reads them again.
+#[derive(Default)]
+struct Facts {
+    files: Vec<FileFacts>,
+    /// Each object defined (`rdf:ID`, or NC's `rdf:about`), by the files that define it.
+    defined_in: BTreeMap<String, Vec<u16>>,
+}
+
+struct FileFacts {
+    name: String,
+    /// Its header's identifier, if it has one.
+    header: Option<String>,
+    /// Objects of the CGMES and NC tables, and of classes outside them.
+    objects: usize,
+    foreign: usize,
 }
 
 /// The loaded files as validated, and what was found.
@@ -79,6 +103,10 @@ pub struct Session {
     checking: Vec<(String, CimDataset)>,
     /// Gone when a file comes in, as it no longer says what the model holds.
     validated: Option<Validated>,
+    /// Gathered from the files given to [`Session::check_file`], and kept from one validation to
+    /// the next.
+    gathering: Facts,
+    facts: Option<Facts>,
 }
 
 struct Views {
@@ -126,6 +154,7 @@ impl Session {
                     self.dataset.merge(dataset);
                     self.views = None;
                     self.validated = None;
+                    self.facts = None;
                     FileOutcome::Loaded {
                         name: name.to_string(),
                         objects,
@@ -187,6 +216,26 @@ impl Session {
     /// and the session keeps only their merge, so the page hands them over again.
     pub fn check_file(&mut self, name: &str, text: &str) -> Result<(), String> {
         let dataset = CimDataset::decode_str(text).map_err(|error| error.to_string())?;
+        let index = self.gathering.files.len() as u16;
+        let mut header = None;
+        for (id, element) in dataset.entries.iter().chain(&dataset.foreign) {
+            if HEADERS.contains(&element.local_name()) && header.is_none() {
+                header = Some(id.clone());
+            }
+            if element.defined() {
+                self.gathering
+                    .defined_in
+                    .entry(id.clone())
+                    .or_default()
+                    .push(index);
+            }
+        }
+        self.gathering.files.push(FileFacts {
+            name: name.to_string(),
+            header,
+            objects: dataset.entries.len(),
+            foreign: dataset.foreign.len(),
+        });
         self.checking.push((name.to_string(), dataset));
         Ok(())
     }
@@ -214,6 +263,7 @@ impl Session {
             findings,
             files,
         });
+        self.facts = Some(std::mem::take(&mut self.gathering));
         // Findings only add up on views: new ones take new views. The layout comes out the same.
         self.views = None;
         self.findings()
@@ -326,29 +376,21 @@ impl Session {
         self.views();
         let views = self.views.as_ref().expect("just built");
         let referrers = self.referrers(id);
-        let Some(element) = self.dataset.entries.get(id) else {
+        let foreign = self.dataset.foreign.get(id);
+        let Some(element) = self.dataset.entries.get(id).or(foreign) else {
             if referrers.0 == 0 {
                 return Value::Null;
             }
             return json!({
                 "id": id, "missing": true, "class": null, "types": [], "label": null, "comment": "",
                 "defined": false, "fields": [], "grid": views.grid.reveal(id),
-                "findings": self.findings_on(id), "referrers": referrers.1,
+                "findings": self.findings_on(id), "referrers": referrers.1, "definedIn": [],
             });
         };
         let text = |value: &str| json!({ "text": value });
         // An enumeration's value is written as a reference is, to a vocabulary's IRI: no object.
-        let reference = |value: &str, enumeration: bool| {
-            let target = mrid_of(value);
-            match self.dataset.entries.get(target) {
-                Some(found) => json!({
-                    "text": found.get_str("IdentifiedObject.name").unwrap_or(target),
-                    "ref": target,
-                }),
-                None if enumeration => json!({ "text": target }),
-                None => json!({ "text": target, "ref": target, "missing": true }),
-            }
-        };
+        let reference =
+            |key, value: &str, enumeration: bool| self.reference(element, key, value, enumeration);
         let registry = type_registry();
         let mut fields: Vec<(&str, Value)> = element
             .fields()
@@ -360,10 +402,11 @@ impl Session {
                 let values: Vec<Value> = match value {
                     FieldValue::Text(value) => vec![text(value)],
                     FieldValue::TextList(values) => values.iter().map(|v| text(v)).collect(),
-                    FieldValue::Resource(value) => vec![reference(value, enumeration)],
-                    FieldValue::ResourceList(values) => {
-                        values.iter().map(|v| reference(v, enumeration)).collect()
-                    }
+                    FieldValue::Resource(value) => vec![reference(key, value, enumeration)],
+                    FieldValue::ResourceList(values) => values
+                        .iter()
+                        .map(|v| reference(key, v, enumeration))
+                        .collect(),
                 };
                 let field = json!({
                     "key": key, "values": values, "declared": declared.is_some(),
@@ -385,6 +428,135 @@ impl Session {
             "grid": views.grid.reveal(id),
             "findings": self.findings_on(id),
             "referrers": referrers.1,
+            "foreign": foreign.is_some(),
+            "definedIn": self.defined_in(id),
+        })
+    }
+
+    /// What a reference names: the object's identifier for a reference within the documents
+    /// (`#_x`, cut to what follows the `#`), else the whole IRI, which the decoder cut too and
+    /// remembers the namespace of for each class and field.
+    fn target<'a>(
+        &self,
+        element: &cimmodel::Element,
+        key: &'static str,
+        value: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        let form = self.dataset.field_forms.get(&(element.type_name(), key));
+        match form.and_then(|form| form.resource_ns) {
+            Some(ns) => std::borrow::Cow::Owned(format!("{ns}{value}")),
+            None => std::borrow::Cow::Borrowed(mrid_of(value)),
+        }
+    }
+
+    /// A reference as a page shows it: to a CIM object, or to reference data, with its name; to
+    /// what the set lacks as `missing`. An enumeration's value is written as a reference is, to a
+    /// vocabulary's IRI, and leads nowhere.
+    fn reference(
+        &self,
+        element: &cimmodel::Element,
+        key: &'static str,
+        value: &str,
+        enumeration: bool,
+    ) -> Value {
+        let target = self.target(element, key, value);
+        if let Some(found) = self.dataset.entries.get(target.as_ref()) {
+            let label = found.get_str("IdentifiedObject.name").unwrap_or(&target);
+            return json!({ "text": label, "ref": target });
+        }
+        if let Some(found) = self.dataset.foreign.get(target.as_ref()) {
+            let label = found
+                .get_str("prefLabel")
+                .or_else(|| found.get_str("title"))
+                .unwrap_or(&target);
+            return json!({ "text": label, "ref": target });
+        }
+        if enumeration {
+            json!({ "text": mrid_of(value) })
+        } else {
+            json!({ "text": target, "ref": target, "missing": true })
+        }
+    }
+
+    /// The files that define `id`, once validation has read them one by one.
+    fn defined_in(&self, id: &str) -> Vec<&str> {
+        let Some(facts) = &self.facts else {
+            return Vec::new();
+        };
+        let files = facts.defined_in.get(id).map_or(&[][..], Vec::as_slice);
+        files
+            .iter()
+            .map(|&f| facts.files[f as usize].name.as_str())
+            .collect()
+    }
+
+    /// The datasets loaded: each file's header, with where its references lead; the objects more
+    /// than one file defines; and those typed with unrelated classes. `null` until validation has
+    /// read the files one by one.
+    pub fn datasets(&self) -> Value {
+        let Some(facts) = &self.facts else {
+            return Value::Null;
+        };
+        let label = |id: &str| {
+            let element = self.dataset.entries.get(id)?;
+            element.get_str("IdentifiedObject.name")
+        };
+        let class = |id: &str| {
+            let element = self
+                .dataset
+                .entries
+                .get(id)
+                .or_else(|| self.dataset.foreign.get(id))?;
+            Some(element.local_name())
+        };
+        let files = facts.files.iter().map(|file| {
+            let header = file.header.as_deref().and_then(|id| {
+                let element = self.dataset.entries.get(id).or_else(|| self.dataset.foreign.get(id))?;
+                let mut refs: Vec<(&str, Vec<Value>)> = Vec::new();
+                let mut profiles: Vec<&str> = Vec::new();
+                for (&key, value) in element.fields() {
+                    let values: Vec<&str> = match value {
+                        FieldValue::Text(v) | FieldValue::Resource(v) => vec![v.as_str()],
+                        FieldValue::TextList(vs) | FieldValue::ResourceList(vs) => {
+                            vs.iter().map(String::as_str).collect()
+                        }
+                    };
+                    if key.ends_with("profile") || key == "conformsTo" {
+                        profiles.extend(values);
+                    } else if matches!(value, FieldValue::Resource(_) | FieldValue::ResourceList(_)) {
+                        refs.push((key, values.iter().map(|v| self.reference(element, key, v, false)).collect()));
+                    }
+                }
+                refs.sort_by_key(|r| r.0);
+                profiles.sort_unstable();
+                Some(json!({
+                    "id": id, "class": element.local_name(), "profiles": profiles,
+                    "refs": refs.into_iter().map(|(key, values)| json!({ "key": key, "values": values })).collect::<Vec<_>>(),
+                }))
+            });
+            json!({ "name": file.name, "objects": file.objects, "foreign": file.foreign, "header": header })
+        });
+        let twice: Vec<(&String, &Vec<u16>)> = facts
+            .defined_in
+            .iter()
+            .filter(|(_, files)| files.len() > 1)
+            .collect();
+        let twice_listed = twice.iter().take(DATASET_LIMIT).map(|(id, files)| {
+            let names: Vec<&str> = files
+                .iter()
+                .map(|&f| facts.files[f as usize].name.as_str())
+                .collect();
+            json!({ "id": id, "label": label(id), "class": class(id), "files": names })
+        });
+        let conflicts = self.dataset.type_conflicts();
+        let conflicts_listed = conflicts
+            .iter()
+            .take(DATASET_LIMIT)
+            .map(|(id, types)| json!({ "id": id, "label": label(id), "types": types }));
+        json!({
+            "files": files.collect::<Vec<_>>(),
+            "twice": { "count": twice.len(), "objects": twice_listed.collect::<Vec<_>>() },
+            "conflicts": { "count": conflicts.len(), "objects": conflicts_listed.collect::<Vec<_>>() },
         })
     }
 
@@ -392,11 +564,13 @@ impl Session {
     /// the first [`REFERRERS_LIMIT`] of them. Asked for when shown, so it costs no memory.
     fn referrers(&self, id: &str) -> (usize, Value) {
         let mut by_key: BTreeMap<&str, Vec<(&str, &cimmodel::Element)>> = BTreeMap::new();
-        for (source, element) in &self.dataset.entries {
+        // A CIM object is named by what follows the last `#`; reference data by its whole IRI.
+        for (source, element) in self.dataset.entries.iter().chain(&self.dataset.foreign) {
             for (&key, value) in element.fields() {
+                let names_it = |value: &str| self.target(element, key, value) == id;
                 let names = match value {
-                    FieldValue::Resource(value) => mrid_of(value) == id,
-                    FieldValue::ResourceList(values) => values.iter().any(|v| mrid_of(v) == id),
+                    FieldValue::Resource(value) => names_it(value),
+                    FieldValue::ResourceList(values) => values.iter().any(|v| names_it(v)),
                     FieldValue::Text(_) | FieldValue::TextList(_) => false,
                 };
                 if names {
@@ -712,6 +886,89 @@ mod tests {
             json!({ "text": "_boundary", "ref": "_boundary", "missing": true })
         );
         assert!(session.object("_nobody").is_null());
+    }
+
+    /// A second dataset: it depends on the grid's and on one not loaded, defines the breaker
+    /// again, and names a concept of reference data.
+    const SECOND: &str = include_str!("../../../web/tests/fixtures/second_EQ.xml");
+
+    fn two_datasets() -> Session {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        session.add_file("second_EQ.xml", SECOND);
+        session.check_file("grid_EQ.xml", GRID).unwrap();
+        session.check_file("second_EQ.xml", SECOND).unwrap();
+        session.validate(Checks::default());
+        session
+    }
+
+    #[test]
+    fn datasets_wait_for_the_files_to_be_read_one_by_one() {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        assert!(session.datasets().is_null());
+        assert!(two_datasets().datasets().is_object());
+    }
+
+    #[test]
+    fn each_dataset_shows_its_header_and_where_its_references_lead() {
+        let datasets = two_datasets().datasets();
+        let files = datasets["files"].as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        let header = &files[1]["header"];
+        assert_eq!(
+            header["id"],
+            "urn:uuid:00000000-0000-4000-8000-000000000f02"
+        );
+        assert_eq!(
+            header["profiles"],
+            json!(["http://iec.ch/TC57/ns/CIM/CoreEquipment-EU/3.0"])
+        );
+        let on = &header["refs"][0];
+        assert_eq!(on["key"], "Model.DependentOn");
+        let values = on["values"].as_array().unwrap();
+        assert_eq!(
+            values[0]["ref"],
+            "urn:uuid:00000000-0000-4000-8000-000000000f01"
+        );
+        assert!(values[0].get("missing").is_none(), "{values:?}");
+        assert_eq!(values[1]["missing"], true);
+        assert_eq!(files[1]["foreign"], 1);
+    }
+
+    #[test]
+    fn an_object_two_datasets_define_is_listed_and_says_where() {
+        let mut session = two_datasets();
+        let twice = &session.datasets()["twice"];
+        assert_eq!(twice["count"], 1);
+        assert_eq!(twice["objects"][0]["id"], BREAKER);
+        assert_eq!(
+            twice["objects"][0]["files"],
+            json!(["grid_EQ.xml", "second_EQ.xml"])
+        );
+        assert_eq!(
+            session.object(BREAKER)["definedIn"],
+            json!(["grid_EQ.xml", "second_EQ.xml"])
+        );
+    }
+
+    #[test]
+    fn reference_data_has_a_page_and_references_reach_it() {
+        let mut session = two_datasets();
+        let breaker = session.object(BREAKER);
+        let fields = breaker["fields"].as_array().unwrap();
+        let concept = fields
+            .iter()
+            .find(|f| f["key"] == "Switch.concept")
+            .unwrap();
+        assert_eq!(
+            concept["values"][0],
+            json!({ "text": "A concept", "ref": "https://example.org/concepts#c" })
+        );
+        let page = session.object("https://example.org/concepts#c");
+        assert_eq!(page["foreign"], true);
+        assert_eq!(page["class"], "Concept");
+        assert_eq!(page["referrers"]["by"][0]["objects"][0]["id"], BREAKER);
     }
 
     #[test]
