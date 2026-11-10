@@ -186,7 +186,7 @@ test.describe('browsing', () => {
 
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles(GRID);
-    await expect(summary(page)).toHaveText('2 substations, 0 boundary points, 1 connection');
+    await expect(summary(page)).toContainText('2 substations, 0 boundary points, 1 connection');
   });
 
   test('draws the grid', async ({ page }) => {
@@ -212,7 +212,7 @@ test.describe('browsing', () => {
     await expect(tree(page).locator('[aria-current="true"]')).toContainText('Breaker A');
     await expect.poll(() => painted(page)).toBe(true);
     await page.getByRole('button', { name: '← Grid' }).click();
-    await expect(summary(page)).toHaveText('2 substations, 0 boundary points, 1 connection');
+    await expect(summary(page)).toContainText('2 substations, 0 boundary points, 1 connection');
   });
 
   test('goes inside a substation from its details', async ({ page }) => {
@@ -255,6 +255,59 @@ test('breaks none of the page\'s rules while drawing', async ({ browser, baseURL
   await context.close();
 });
 
+test.describe('validation', () => {
+  const findings = (page: Page) => page.getByTestId('findings-summary');
+
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles(GRID);
+    await expect(findings(page)).toContainText(/violation|warning|info/);
+  });
+
+  test('runs after loading, and lists each broken rule with its findings', async ({ page }) => {
+    await expect(findings(page)).toContainText('in 1 file');
+    await page.getByText(/rules? broken/).click();
+    const rule = page.getByTestId('findings').locator('.rules > li').first();
+    await rule.locator('summary').click();
+    await expect(rule.getByTestId('found').locator('li').first()).toBeVisible();
+  });
+
+  test('a finding leads to its object, which lists it', async ({ page }) => {
+    await page.getByText(/rules? broken/).click();
+    const rule = page.getByTestId('findings').locator('.rules > li').first();
+    await rule.locator('summary').click();
+    const first = rule.getByTestId('found').getByRole('button').first();
+    const name = (await first.textContent())!.trim();
+    await first.click();
+    await expect(page.getByTestId('details').getByRole('heading', { name, exact: true })).toBeVisible();
+    await expect(page.getByTestId('object-findings')).toBeVisible();
+  });
+
+  test('the tree counts findings and can show only what holds them', async ({ page }) => {
+    const tree = page.getByTestId('tree');
+    await expect(tree.locator('.badge').first()).toBeVisible();
+    await tree.getByLabel('With findings only').check();
+    await expect(tree.locator('.row').first()).toBeVisible();
+    const sections = await tree.locator('.row').count();
+    await expect(tree.locator('.row .badge')).toHaveCount(sections);
+  });
+
+  test('the grid says what was found on it', async ({ page }) => {
+    await expect(page.getByTestId('grid-summary')).toContainText('not on the grid');
+  });
+
+  test('more checks find more, and are remembered', async ({ page }) => {
+    const before = await findings(page).textContent();
+    await page.getByLabel('Common cross-profile checks').check();
+    await page.getByLabel('Modelling-quality checks').check();
+    await expect(findings(page)).not.toHaveText(before!);
+    await page.reload();
+    // Where the files were not kept (WebKit in a test), the checks show again once there is a model.
+    await input(page).setInputFiles(GRID);
+    await expect(page.getByLabel('Modelling-quality checks')).toBeChecked();
+    await expect(page.getByLabel('Common cross-profile checks')).toBeChecked();
+  });
+});
+
 test('says so when the files hold no grid', async ({ page }) => {
   await input(page).setInputFiles(EQ);
   await expect(page.getByTestId('no-grid')).toBeVisible();
@@ -290,6 +343,8 @@ test('where files cannot be kept, it still reads them and does not say they are 
   await expect(page.getByTestId('totals')).toBeHidden();
 });
 
+const relicap = process.env.RELICAPGRID_DIR;
+
 // The largest test model, to measure with: REALGRID_DIR=.../RealGrid/RealGrid-Merged npm run e2e
 const realGrid = process.env.REALGRID_DIR;
 test('draws RealGrid', async ({ page }, info) => {
@@ -316,8 +371,34 @@ test('draws RealGrid', async ({ page }, info) => {
   console.log(`${info.project.name}: back after a reload`);
 });
 
+// cimoxide's report, scripts/relicapgrid, counts what `cimoxide.validate_files` finds with both checks on.
+test('finds on ReliCapGrid what cimoxide finds', async ({ page }) => {
+  test.skip(!relicap, 'RELICAPGRID_DIR is not set');
+  test.setTimeout(120_000);
+  const grid = (area: string) =>
+    readdirSync(join(relicap!, 'Instance', area, 'Grid', 'cimxml')).sort().map((n) => join(relicap!, 'Instance', area, 'Grid', 'cimxml', n));
+  for (const [area, expected] of [['Svedala', 572], ['Belgovia', 82]] as const) {
+    if (await page.getByRole('button', { name: 'Clear' }).isVisible()) {
+      await page.getByRole('button', { name: 'Clear' }).click();
+      await expect(page.getByTestId('findings-summary')).toBeHidden();
+    }
+    await input(page).setInputFiles(grid(area));
+    await expect(page.getByTestId('findings-summary')).toContainText('in 4 files', { timeout: 60_000 });
+    for (const label of ['Common cross-profile checks', 'Modelling-quality checks']) {
+      const box = page.getByLabel(label);
+      if (!(await box.isChecked())) {
+        await box.check();
+        await expect(page.getByTestId('findings-summary')).not.toHaveText('Validating…', { timeout: 60_000 });
+      }
+    }
+    await expect(page.getByTestId('findings-summary')).toContainText('in 4 files', { timeout: 60_000 });
+    const text = (await page.getByTestId('findings-summary').textContent())!;
+    const total = [...text.matchAll(/([\d,]+) (violation|warning|info)/g)].reduce((a, m) => a + Number(m[1].replace(/,/g, '')), 0);
+    expect(total, `${area}: ${text}`).toBe(expected);
+  }
+});
+
 // A real model, to measure with: RELICAPGRID_DIR=.../relicapgrid npm run e2e
-const relicap = process.env.RELICAPGRID_DIR;
 test('decodes ReliCapGrid common grid model', async ({ page }, info) => {
   test.skip(!relicap, 'RELICAPGRID_DIR is not set');
   const dir = (path: string, pattern: RegExp = /./) =>

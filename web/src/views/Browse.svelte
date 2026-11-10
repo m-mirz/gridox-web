@@ -5,7 +5,12 @@
   import GridView from './GridView.svelte';
   import TreeView from './TreeView.svelte';
 
-  let { client, version }: { client: WorkerClient; version: number } = $props();
+  let {
+    client,
+    version,
+    findingsVersion,
+    validated,
+  }: { client: WorkerClient; version: number; findingsVersion: number; validated: boolean } = $props();
 
   let tree = $state<TreeView>();
   let gridView = $state<GridView>();
@@ -27,7 +32,8 @@
     if (id) void tree?.reveal(id);
   }
 
-  async function navigate(to: string) {
+  /** Shows the object `to` in the tree and the grid, and its details. */
+  export async function navigate(to: string) {
     const entry = await tree?.reveal(to);
     id = to;
     info = null;
@@ -36,9 +42,9 @@
 </script>
 
 <div class="browse">
-  <TreeView bind:this={tree} {client} {version} onpick={picked} />
-  <GridView bind:this={gridView} {client} {version} onselect={selectedOnGrid} />
-  <Details {client} {id} {info} onnavigate={navigate} />
+  <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
+  <GridView bind:this={gridView} {client} {version} {findingsVersion} {validated} onselect={selectedOnGrid} />
+  <Details {client} {id} {info} {findingsVersion} onnavigate={navigate} />
 </div>
 
 <style>

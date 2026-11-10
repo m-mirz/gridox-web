@@ -15,17 +15,21 @@
     client,
     id,
     info,
+    findingsVersion,
     onnavigate,
   }: {
     client: WorkerClient;
     id: string | null;
     info: Info | null;
+    /** Changes when the findings do. */
+    findingsVersion: number;
     onnavigate: (id: string) => void;
   } = $props();
 
   let object = $state.raw<ObjectFields | null>(null);
 
   $effect(() => {
+    void findingsVersion;
     const asked = id;
     if (!asked) {
       object = null;
@@ -73,6 +77,19 @@
     <p class="sub">{object.class}</p>
   {:else}
     <p class="sub">Select an object in the tree, or a substation or a line in the grid.</p>
+  {/if}
+
+  {#if object?.findings.length}
+    <h3>Findings</h3>
+    <ul class="findings" data-testid="object-findings">
+      {#each object.findings as finding, i (i)}
+        <li>
+          <span class={finding.severity}>{finding.name || finding.rule}</span>
+          {#if finding.property}<span class="sub">{short(finding.property)}</span>{/if}
+          <span>{finding.message}</span>
+        </li>
+      {/each}
+    </ul>
   {/if}
 
   {#if object}
@@ -126,6 +143,32 @@
     min-height: 2rem;
     padding: 0 0.5rem;
     font: inherit;
+  }
+
+  .findings {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+  }
+
+  .findings li {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0.4rem;
+    overflow-wrap: anywhere;
+  }
+
+  .violation {
+    color: var(--violation);
+  }
+
+  .warning {
+    color: var(--warning);
+  }
+
+  .info {
+    color: var(--info);
   }
 
   dl {

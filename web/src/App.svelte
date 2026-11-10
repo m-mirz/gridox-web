@@ -3,9 +3,10 @@
   import { droppedFiles } from './drop';
   import Browse from './views/Browse.svelte';
   import DropZone from './views/DropZone.svelte';
+  import FindingsView from './views/FindingsView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
-  import type { Summary } from './worker/protocol';
+  import type { Checks, FindingsSummary, Summary } from './worker/protocol';
   import ModelWorker from './worker/worker?worker';
 
   const client = new WorkerClient(() => new ModelWorker());
@@ -64,13 +65,60 @@
   let version = $state(0);
   let objects = $derived((summary?.objects ?? 0) > 0);
 
+  let findings = $state.raw<FindingsSummary | null>(null);
+  let checking = $state(false);
+  /** Counts validations, for the views to show the findings. */
+  let findingsVersion = $state(0);
+  const CHECKS = 'gridox.checks';
+  let checks = $state<Checks>(storedChecks());
+  let browse = $state<Browse>();
+
+  /** The checks chosen last time, in this browser. */
+  function storedChecks(): Checks {
+    try {
+      const { common, quality } = JSON.parse(localStorage.getItem(CHECKS) ?? '{}');
+      return { common: common === true, quality: quality === true };
+    } catch {
+      return { common: false, quality: false };
+    }
+  }
+
+  function changeChecks(chosen: Checks) {
+    checks = chosen;
+    try {
+      localStorage.setItem(CHECKS, JSON.stringify(chosen));
+    } catch {
+      // Remembering is a convenience.
+    }
+    void enqueue(validate);
+  }
+
   type ModelRequest = { kind: 'load'; files: File[] } | { kind: 'restore' } | { kind: 'clear' };
 
   /** One at a time, in the order asked: a drop while kept files come back waits for them. */
   let queue: Promise<void> = Promise.resolve();
-  function run(request: ModelRequest): Promise<void> {
-    queue = queue.then(() => perform(request));
+  function enqueue(task: () => Promise<void>): Promise<void> {
+    queue = queue.then(task);
     return queue;
+  }
+
+  function run(request: ModelRequest): Promise<void> {
+    return enqueue(() => perform(request));
+  }
+
+  /** Validates the model as it is now, after whatever was asked before. */
+  async function validate() {
+    if (!objects) return;
+    checking = true;
+    try {
+      findings = await client.request<'validate'>({ kind: 'validate', ...checks });
+      findingsVersion += 1;
+    } catch (failure) {
+      findings = null;
+      error = `Validation failed: ${failure}`;
+    } finally {
+      checking = false;
+    }
   }
 
   async function perform(request: ModelRequest) {
@@ -81,7 +129,10 @@
     try {
       ({ summary, kept } = await client.request<typeof request.kind>(request as never));
       version += 1;
+      findings = null;
       elapsed = performance.now() - started;
+      // After this one, so that it reads every file loaded.
+      if (objects) void enqueue(validate);
     } catch (failure) {
       // The worker, and the model it held, may be gone: nothing shown can still be trusted.
       summary = null;
@@ -136,7 +187,8 @@
     </div>
     <SummaryView {summary} />
     {#if objects}
-      <Browse {client} {version} />
+      <FindingsView {client} {findings} {checking} {checks} onchecks={changeChecks} onnavigate={(id) => browse?.navigate(id)} />
+      <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} />
     {/if}
   {/if}
 </main>

@@ -8,11 +8,16 @@
   let {
     client,
     version,
+    findingsVersion,
+    validated,
     onpick,
   }: {
     client: WorkerClient;
     /** Changes when the model does. */
     version: number;
+    /** Changes when the findings do. */
+    findingsVersion: number;
+    validated: boolean;
     onpick: (entry: TreeEntry) => void;
   } = $props();
 
@@ -24,6 +29,8 @@
   let query = $state('');
   let hits = $state.raw<SearchHit[] | null>(null);
   let list = $state<HTMLElement>();
+  /** Only what holds findings. */
+  let onlyFindings = $state(false);
 
   type Row = { entry: TreeEntry; depth: number };
 
@@ -40,18 +47,38 @@
   async function fetchLevel(key: string): Promise<TreeEntry[]> {
     const known = levels.get(key);
     if (known) return known;
-    const entries = (await client.request<'children'>({ kind: 'children', key: key === ROOT ? null : key })) ?? [];
+    const entries = await ask(key);
     levels.set(key, entries);
     return entries;
+  }
+
+  async function ask(key: string): Promise<TreeEntry[]> {
+    const only = onlyFindings && validated;
+    return (await client.request<'children'>({ kind: 'children', key: key === ROOT ? null : key, onlyFindings: only })) ?? [];
+  }
+
+  function restart() {
+    levels.clear();
+    open.clear();
+    selected = null;
+    void fetchLevel(ROOT);
   }
 
   $effect(() => {
     version;
     untrack(() => {
-      levels.clear();
-      open.clear();
-      selected = null;
-      void fetchLevel(ROOT);
+      onlyFindings = false;
+      restart();
+    });
+  });
+
+  // New findings: each level shown is asked again, so what is open stays open.
+  $effect(() => {
+    if (!findingsVersion) return;
+    untrack(async () => {
+      const shown = [...levels.keys()];
+      const fresh = await Promise.all(shown.map((key) => ask(key)));
+      shown.forEach((key, i) => levels.set(key, fresh[i]));
     });
   });
 
@@ -72,7 +99,13 @@
 
   /** Opens the way down to the object `id` and marks it; what it finds, if the tree has it. */
   export async function reveal(id: string): Promise<TreeEntry | undefined> {
-    const keys = await client.request<'path'>({ kind: 'path', id });
+    let keys = await client.request<'path'>({ kind: 'path', id, onlyFindings: onlyFindings && validated });
+    if (!keys?.length && onlyFindings) {
+      // Hidden by the filter: shown without it.
+      onlyFindings = false;
+      restart();
+      keys = await client.request<'path'>({ kind: 'path', id, onlyFindings: false });
+    }
     if (!keys?.length) return undefined;
     let level = await fetchLevel(ROOT);
     let found: TreeEntry | undefined;
@@ -110,6 +143,10 @@
     if (entry) onpick(entry);
   }
 
+  const total = (entry: TreeEntry) => entry.findings.violation + entry.findings.warning + entry.findings.info;
+  const worst = (entry: TreeEntry) =>
+    entry.findings.violation ? 'violation' : entry.findings.warning ? 'warning' : 'info';
+
   /** The equipment symbol, for what has one. A constant of ours, not the model's text. */
   const icon = (entry: TreeEntry) => {
     const symbol = entry.class ? symbolOf(entry.class) : undefined;
@@ -119,6 +156,12 @@
 
 <nav aria-label="Objects" data-testid="tree">
   <input type="search" placeholder="Find an object by name or mRID" aria-label="Find an object" bind:value={query} oninput={search} />
+  {#if validated}
+    <label class="filter">
+      <input type="checkbox" bind:checked={onlyFindings} onchange={restart} />
+      With findings only
+    </label>
+  {/if}
   <div class="list" bind:this={list}>
     {#if hits}
       {#if !hits.length}
@@ -148,6 +191,9 @@
             {#if icon(entry)}<span class="icon">{@html icon(entry)}</span>{/if}
             <span class="name">{entry.label}</span>
             <small>{entry.id ? (entry.kind === 'missing' ? 'not in the set' : entry.class) : entry.children}</small>
+            {#if validated && total(entry)}
+              <span class="badge {worst(entry)}" title="{entry.findings.violation} violations, {entry.findings.warning} warnings, {entry.findings.info} info">{total(entry).toLocaleString('en')}</span>
+            {/if}
           </button>
         </div>
       {/each}
@@ -243,6 +289,39 @@
   small {
     flex: none;
     color: var(--muted);
+  }
+
+  .filter {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0 0.5rem 0.25rem;
+  }
+
+  .filter input {
+    margin: 0;
+  }
+
+  .badge {
+    flex: none;
+    margin-left: auto;
+    padding: 0 0.35rem;
+    border-radius: 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--bg);
+  }
+
+  .badge.violation {
+    background: var(--violation);
+  }
+
+  .badge.warning {
+    background: var(--warning);
+  }
+
+  .badge.info {
+    background: var(--info);
   }
 
   .missing .name {
