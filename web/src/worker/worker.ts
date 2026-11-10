@@ -12,6 +12,8 @@ const ready = init().then(() => {
 
 /** Whether the files of the model are kept in this browser. */
 let keeping = false;
+/** The files loaded, in the order they came, for validation to read again. */
+let files: File[] = [];
 
 function loaded(): string {
   return `{"summary":${session.summary()},"kept":${keeping}}`;
@@ -40,11 +42,13 @@ async function handle(request: Request): Promise<string> {
   switch (request.kind) {
     case 'load': {
       const added = await add(request.files);
+      files.push(...added);
       if (added.length) keeping = await keep(added);
       return loaded();
     }
     case 'restore': {
       const added = await add(await kept());
+      files = added;
       keeping = added.length > 0;
       return loaded();
     }
@@ -52,6 +56,7 @@ async function handle(request: Request): Promise<string> {
       session.free();
       session = new Session();
       keeping = false;
+      files = [];
       await forget().catch(() => {});
       return loaded();
     case 'grid':
@@ -59,13 +64,18 @@ async function handle(request: Request): Promise<string> {
     case 'inside':
       return session.inside(request.id);
     case 'children':
-      return session.children(request.key ?? undefined);
+      return session.children(request.key ?? undefined, request.onlyFindings);
     case 'search':
       return session.search(request.query);
     case 'path':
-      return session.path(request.id);
+      return session.path(request.id, request.onlyFindings);
     case 'object':
       return session.object(request.id);
+    case 'validate':
+      for (const file of files) session.checkFile(file.name, await file.text());
+      return session.validate(request.common, request.quality);
+    case 'findings':
+      return session.findingsOf(request.rule);
   }
 }
 

@@ -125,6 +125,7 @@ name = "gridox-wasm"
 version = "0.0.0"
 dependencies = [
  "cimoxide-model",
+ "cimoxide-validation",
  "cimoxide-view",
  "console_error_panic_hook",
  "serde",

@@ -98,17 +98,37 @@ export function count(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 }
 
-export function gridSummary(g: Grid): string {
-  const subs = g.nodes.filter((n) => n.kind === 'Substation').length;
-  return `${count(subs, 'substation')}, ${count(g.nodes.length - subs, 'boundary point')}, ${count(g.edges.length, 'connection')}`;
+/** `2 violations, 1 warning`; the severities found, worst first. */
+export function findingsText(f: Findings): string {
+  const parts = [count(f.violation, 'violation'), count(f.warning, 'warning'), `${f.info.toLocaleString('en')} info`];
+  const found = [f.violation, f.warning, f.info].map((n, i) => (n ? parts[i] : '')).filter((x) => x);
+  return found.length ? found.join(', ') : 'no findings';
 }
 
-export function insideSummary(s: Inside): string {
+export function sumFindings(fs: Findings[]): Findings {
+  return fs.reduce((a, f) => ({ violation: a.violation + f.violation, warning: a.warning + f.warning, info: a.info + f.info }), {
+    violation: 0,
+    warning: 0,
+    info: 0,
+  });
+}
+
+/** The grid in a line; with `validated`, its findings, and those of objects it does not draw. */
+export function gridSummary(g: Grid, validated = false): string {
+  const subs = g.nodes.filter((n) => n.kind === 'Substation').length;
+  const shown = `${count(subs, 'substation')}, ${count(g.nodes.length - subs, 'boundary point')}, ${count(g.edges.length, 'connection')}`;
+  if (!validated) return shown;
+  const on = sumFindings([...g.nodes, ...g.edges].map((x) => x.findings));
+  return `${shown} · ${findingsText(on)} · ${findingsText(g.elsewhere)} not on the grid`;
+}
+
+export function insideSummary(s: Inside, validated = false): string {
   const equipment = s.items.filter((it) => !it.junction);
   const switches = equipment.filter((it) => it.open !== null);
   const open = switches.filter((it) => it.open).length;
-  return `${s.label}: ${equipment.length} equipment, ${count(s.items.length - equipment.length, 'node')}, ` +
+  const shown = `${s.label}: ${equipment.length} equipment, ${count(s.items.length - equipment.length, 'node')}, ` +
     `${count(switches.length, 'switch', 'switches')}${open ? ` (${open} open)` : ''}`;
+  return validated ? `${shown} · ${findingsText(sumFindings([s.findings, ...s.items.map((it) => it.findings)]))}` : shown;
 }
 
 /** The layout to draw: the one picked, else the TSO's diagram, else the map, else automatic. */

@@ -2,7 +2,7 @@
 
 mod session;
 
-pub use session::{ClassCount, FileOutcome, Session, Summary};
+pub use session::{Checks, ClassCount, FileOutcome, Session, Summary};
 
 use wasm_bindgen::prelude::*;
 
@@ -47,19 +47,38 @@ impl JsSession {
     }
 
     /// The tree's sections without a `key`, else that node's children.
-    pub fn children(&mut self, key: Option<String>) -> String {
-        self.0.children(key.as_deref()).to_string()
+    #[wasm_bindgen(js_name = children)]
+    pub fn children(&mut self, key: Option<String>, only_findings: bool) -> String {
+        self.0.children(key.as_deref(), only_findings).to_string()
     }
 
     pub fn search(&mut self, query: &str) -> String {
         self.0.search(query).to_string()
     }
 
-    pub fn path(&mut self, id: &str) -> String {
-        self.0.path(id).to_string()
+    pub fn path(&mut self, id: &str, only_findings: bool) -> String {
+        self.0.path(id, only_findings).to_string()
     }
 
     pub fn object(&mut self, id: &str) -> String {
         self.0.object(id).to_string()
+    }
+
+    #[wasm_bindgen(js_name = checkFile)]
+    pub fn check_file(&mut self, name: &str, text: &str) -> Result<(), JsError> {
+        self.0.check_file(name, text).map_err(|e| JsError::new(&e))
+    }
+
+    pub fn validate(&mut self, common: bool, quality: bool) -> String {
+        self.0.validate(Checks { common, quality }).to_string()
+    }
+
+    pub fn findings(&self) -> String {
+        self.0.findings().to_string()
+    }
+
+    #[wasm_bindgen(js_name = findingsOf)]
+    pub fn findings_of(&self, rule: &str) -> String {
+        self.0.findings_of(rule).to_string()
     }
 }

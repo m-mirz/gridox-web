@@ -23,11 +23,16 @@
   let {
     client,
     version,
+    findingsVersion,
+    validated,
     onselect,
   }: {
     client: WorkerClient;
     /** Changes when the model does. */
     version: number;
+    /** Changes when the findings do. */
+    findingsVersion: number;
+    validated: boolean;
     /** What is selected here, with the object it stands for; `null` when nothing is. */
     onselect: (selection: { id: string | null; info: Info } | null) => void;
   } = $props();
@@ -40,6 +45,10 @@
   let query = $state('');
   let layouts = $state.raw<Layout[]>([]);
   let layout = $state('auto');
+  /** Counts the grids loaded to be drawn anew, as a refresh of the findings is not. */
+  let loaded = $state(0);
+  /** Whether the grid shown has the findings: until it is asked again, it says nothing of them. */
+  let withFindings = $state(false);
 
   let cy: Core | undefined;
   /** The layout picked for the grid and for substations: a layout's id, or `auto`. */
@@ -274,6 +283,7 @@
       busy = true;
       failed = null;
       inside = null;
+      withFindings = false;
       try {
         grid = await client.request<'grid'>({ kind: 'grid' });
       } catch (error) {
@@ -281,12 +291,38 @@
         grid = null;
       }
       busy = false;
+      loaded += 1;
+    });
+  });
+
+  // New findings: the same scene, its colours and rings redone, its layout and selection kept.
+  $effect(() => {
+    if (!findingsVersion) return;
+    untrack(async () => {
+      const fresh = await client.request<'grid'>({ kind: 'grid' });
+      const within = inside ? await client.request<'inside'>({ kind: 'inside', id: inside.id }) : null;
+      grid = fresh;
+      if (inside) inside = within;
+      withFindings = true;
+      if (!cy) return;
+      const elements = inside ? insideElements(inside) : gridElements(fresh);
+      const same = elements.length === cy.elements().length && elements.every((el) => cy?.getElementById(el.data.id as string).nonempty());
+      if (!same) {
+        draw();
+        return;
+      }
+      for (const el of elements) {
+        const at = cy.getElementById(el.data.id as string);
+        at.data(el.data);
+        if (typeof el.classes === 'string') at.classes(el.classes);
+      }
     });
   });
 
   // Once there is both a grid and an element to draw it in, which an empty grid never gets.
   $effect(() => {
-    if (container && grid?.nodes.length) {
+    void loaded;
+    if (untrack(() => container && grid?.nodes.length)) {
       untrack(() => {
         draw();
         if (pending) {
@@ -332,7 +368,7 @@
       <input type="search" aria-label={inside ? 'Find equipment' : 'Find a substation'} placeholder={inside ? 'Find equipment' : 'Find a substation'} bind:value={query} oninput={find} />
     {/if}
     <span data-testid="grid-summary">
-      {#if busy}Laying out the grid…{:else if inside}{insideSummary(inside)}{:else if grid?.nodes.length}{gridSummary(grid)}{/if}
+      {#if busy}Laying out the grid…{:else if inside}{insideSummary(inside, validated && withFindings)}{:else if grid?.nodes.length}{gridSummary(grid, validated && withFindings)}{/if}
     </span>
   </div>
   {#if failed}
