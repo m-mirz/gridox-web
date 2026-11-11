@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Schedules for nc_RA.xml's two exclusive actions: Open Breaker A at 10:00 and 12:00 only
+     (interpolation none), Keep Breaker A closed from 11:00 on (previous); both active at 12:00. -->
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:nc="https://cim4.eu/ns/nc#"
+    xmlns:cim="https://cim.ucaiug.io/ns#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:dcat="http://www.w3.org/ns/dcat#" >
+  <dcat:Dataset rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f05">
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/RemedialActionSchedule/2.4"/>
+  </dcat:Dataset>
+  <nc:RemedialActionSchedule rdf:ID="_00000000-0000-4000-8000-000000000501">
+    <cim:IdentifiedObject.name>Open A, proposed</cim:IdentifiedObject.name>
+    <nc:RemedialActionSchedule.RemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d01"/>
+    <nc:RemedialActionSchedule.statusKind rdf:resource="https://cim4.eu/ns/nc#RemedialActionScheduleStatusKind.proposed"/>
+  </nc:RemedialActionSchedule>
+  <nc:EventSchedule rdf:ID="_00000000-0000-4000-8000-000000000502">
+    <cim:IdentifiedObject.name>Open A, when</cim:IdentifiedObject.name>
+    <nc:BaseTimeSeries.interpolationKind rdf:resource="https://cim4.eu/ns/nc#TimeSeriesInterpolationKind.none"/>
+    <nc:EventSchedule.RemedialActionSchedule rdf:resource="#_00000000-0000-4000-8000-000000000501"/>
+  </nc:EventSchedule>
+  <nc:EventTimePoint rdf:ID="_00000000-0000-4000-8000-000000000503">
+    <nc:EventTimePoint.EventSchedule rdf:resource="#_00000000-0000-4000-8000-000000000502"/>
+    <nc:EventTimePoint.atTime>2024-11-20T12:00:00Z</nc:EventTimePoint.atTime>
+    <nc:EventTimePoint.isActive>true</nc:EventTimePoint.isActive>
+  </nc:EventTimePoint>
+  <nc:EventTimePoint rdf:ID="_00000000-0000-4000-8000-000000000504">
+    <nc:EventTimePoint.EventSchedule rdf:resource="#_00000000-0000-4000-8000-000000000502"/>
+    <nc:EventTimePoint.atTime>2024-11-20T10:00:00Z</nc:EventTimePoint.atTime>
+    <nc:EventTimePoint.isActive>true</nc:EventTimePoint.isActive>
+  </nc:EventTimePoint>
+  <nc:RemedialActionSchedule rdf:ID="_00000000-0000-4000-8000-000000000511">
+    <cim:IdentifiedObject.name>Keep A closed, proposed</cim:IdentifiedObject.name>
+    <nc:RemedialActionSchedule.RemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000d11"/>
+  </nc:RemedialActionSchedule>
+  <nc:EventSchedule rdf:ID="_00000000-0000-4000-8000-000000000512">
+    <cim:IdentifiedObject.name>Keep A closed, when</cim:IdentifiedObject.name>
+    <nc:BaseTimeSeries.interpolationKind rdf:resource="https://cim4.eu/ns/nc#TimeSeriesInterpolationKind.previous"/>
+    <nc:EventSchedule.RemedialActionSchedule rdf:resource="#_00000000-0000-4000-8000-000000000511"/>
+  </nc:EventSchedule>
+  <nc:EventTimePoint rdf:ID="_00000000-0000-4000-8000-000000000513">
+    <nc:EventTimePoint.EventSchedule rdf:resource="#_00000000-0000-4000-8000-000000000512"/>
+    <nc:EventTimePoint.atTime>2024-11-20T12:00:00+01:00</nc:EventTimePoint.atTime>
+    <nc:EventTimePoint.isActive>true</nc:EventTimePoint.isActive>
+  </nc:EventTimePoint>
+  <!-- An availability schedule cancelled, with no time points: no window. -->
+  <nc:AvailabilityRemedialAction rdf:ID="_00000000-0000-4000-8000-000000000521">
+    <cim:IdentifiedObject.name>Make Breaker A available</cim:IdentifiedObject.name>
+  </nc:AvailabilityRemedialAction>
+  <nc:AvailabilitySchedule rdf:ID="_00000000-0000-4000-8000-000000000522">
+    <cim:IdentifiedObject.name>Maintenance of Breaker A</cim:IdentifiedObject.name>
+    <nc:AvailabilitySchedule.RemedialAction rdf:resource="#_00000000-0000-4000-8000-000000000521"/>
+    <nc:AvailabilitySchedule.cancelledDateTime>2024-11-19T08:34:00Z</nc:AvailabilitySchedule.cancelledDateTime>
+    <nc:AvailabilitySchedule.causeKind rdf:resource="https://cim4.eu/ns/nc#AvailabilityScheduleCauseKind.maintenance"/>
+  </nc:AvailabilitySchedule>
+  <!-- A shift key, named by the distribution that uses it, with a numeric time point. -->
+  <nc:PowerShiftKeySchedule rdf:ID="_00000000-0000-4000-8000-000000000531">
+    <cim:IdentifiedObject.name>Shift key 1</cim:IdentifiedObject.name>
+  </nc:PowerShiftKeySchedule>
+  <nc:ParticipationFactorTimePoint rdf:ID="_00000000-0000-4000-8000-000000000532">
+    <nc:ParticipationFactorTimePoint.PowerShiftKeySchedule rdf:resource="#_00000000-0000-4000-8000-000000000531"/>
+    <nc:ParticipationFactorTimePoint.atTime>2024-11-20T11:30:00Z</nc:ParticipationFactorTimePoint.atTime>
+    <nc:ParticipationFactorTimePoint.participationFactor>0.5</nc:ParticipationFactorTimePoint.participationFactor>
+  </nc:ParticipationFactorTimePoint>
+  <nc:PowerShiftKeyDistribution rdf:ID="_00000000-0000-4000-8000-000000000533">
+    <cim:IdentifiedObject.name>Distribution 1</cim:IdentifiedObject.name>
+    <nc:PowerShiftKeyDistribution.PowerShiftKeySchedule rdf:resource="#_00000000-0000-4000-8000-000000000531"/>
+  </nc:PowerShiftKeyDistribution>
+</rdf:RDF>

@@ -2,8 +2,10 @@
   import { onMount } from 'svelte';
   import { droppedFiles } from './drop';
   import Browse from './views/Browse.svelte';
+  import DatasetsView from './views/DatasetsView.svelte';
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
+  import NetworkCodesView from './views/NetworkCodesView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
   import type { Checks, FindingsSummary, Summary } from './worker/protocol';
@@ -188,6 +190,8 @@
     <SummaryView {summary} />
     {#if objects}
       <FindingsView {client} {findings} {checking} {checks} onchecks={changeChecks} onnavigate={(id) => browse?.navigate(id)} />
+      <DatasetsView {client} {findingsVersion} onnavigate={(id) => browse?.navigate(id)} />
+      <NetworkCodesView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} />
     {/if}
   {/if}

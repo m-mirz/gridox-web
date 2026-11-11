@@ -7,6 +7,10 @@ const fixture = (name: string) => join(import.meta.dirname, 'fixtures', name);
 const EQ = fixture('small_EQ.xml');
 const SSH = fixture('small_SSH.xml');
 const GRID = fixture('grid_EQ.xml');
+const SECOND = fixture('second_EQ.xml');
+const NC = fixture('nc_CO_AE.xml');
+const RA = fixture('nc_RA.xml');
+const RAS = fixture('nc_RAS.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -66,6 +70,9 @@ test.describe('real drags', () => {
 
   test('onto the grid, adding to a model', async ({ page }) => {
     await input(page).setInputFiles(GRID);
+    // Once validation's panels are in, which move the grid down, and with the grid in view.
+    await expect(page.getByTestId('datasets-summary')).toBeVisible();
+    await page.getByTestId('graph').scrollIntoViewIfNeeded();
     const graph = await page.getByTestId('graph').boundingBox();
     await drag(page, { files: [EQ] }, graph!.x + 50, graph!.y + 50);
     await expect(page.getByTestId('totals')).toContainText('from 2 files');
@@ -232,6 +239,28 @@ test.describe('browsing', () => {
     await expect(tree(page).locator('[aria-current="true"]')).toContainText('Anvil 110');
   });
 
+  test('an object says what refers to it, and Back returns', async ({ page }) => {
+    await tree(page).getByRole('searchbox').fill('anvil 110');
+    await page.getByTestId('hits').getByRole('button', { name: /Anvil 110/ }).click();
+    const referrers = page.getByTestId('referrers');
+    await expect(details(page).getByRole('heading', { name: 'Referred to by 3' })).toBeVisible();
+    await expect(referrers).toContainText('Equipment.EquipmentContainer');
+    await referrers.getByRole('button', { name: 'Breaker A' }).click();
+    await expect(details(page).getByRole('heading', { name: 'Breaker A' })).toBeVisible();
+    await details(page).getByRole('button', { name: '← Back' }).click();
+    await expect(details(page).getByRole('heading', { name: 'Anvil 110' })).toBeVisible();
+  });
+
+  test('a field can say what the vocabulary says of it', async ({ page }) => {
+    await tree(page).getByRole('searchbox').fill('breaker a');
+    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
+    const fields = page.getByTestId('fields');
+    await expect(fields).toContainText('Switch.normalOpen');
+    const before = (await fields.textContent())!.length;
+    await details(page).getByLabel('Descriptions').check();
+    await expect.poll(async () => (await fields.textContent())!.length).toBeGreaterThan(before);
+  });
+
   test('a page wide as a phone does not scroll sideways', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 700 });
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -305,6 +334,127 @@ test.describe('validation', () => {
     await input(page).setInputFiles(GRID);
     await expect(page.getByLabel('Modelling-quality checks')).toBeChecked();
     await expect(page.getByLabel('Common cross-profile checks')).toBeChecked();
+  });
+});
+
+test.describe('datasets', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, SECOND]);
+    await expect(page.getByTestId('datasets-summary')).toBeVisible();
+  });
+
+  test('say what is defined twice and which header references are not loaded', async ({ page }) => {
+    const summary = page.getByTestId('datasets-summary');
+    await expect(summary).toContainText('2 files');
+    await expect(summary).toContainText('1 object defined more than once');
+    await expect(summary).toContainText('1 header reference not loaded');
+    await summary.click();
+    await page.getByTestId('twice').getByRole('button', { name: 'Breaker A' }).click();
+    await expect(page.getByTestId('defined-in')).toContainText('Defined by 2 files: grid_EQ.xml, second_EQ.xml');
+  });
+
+  test('a header shows where its references lead', async ({ page }) => {
+    await page.getByTestId('datasets-summary').click();
+    const files = page.getByTestId('dataset-files');
+    await files.getByText('second_EQ.xml').click();
+    await expect(files.locator('.missing')).toHaveText('urn:uuid:not-loaded not loaded');
+    await files.getByRole('button', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' })).toBeVisible();
+    await expect(page.getByTestId('referrers')).toContainText('Model.DependentOn');
+  });
+
+  test('reference data has a page of its own', async ({ page }) => {
+    await page.getByTestId('tree').getByRole('searchbox').fill('breaker a');
+    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
+    await page.getByTestId('fields').getByRole('button', { name: 'A concept' }).click();
+    const details = page.getByTestId('details');
+    await expect(details).toContainText('Reference data, outside the CIM class tables.');
+    await expect(page.getByTestId('referrers')).toContainText('Switch.concept');
+  });
+});
+
+test.describe('network codes', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, NC]);
+    await expect(page.getByTestId('network-codes')).toBeVisible();
+  });
+
+  test('a contingency shows its equipment, and where the grid has it', async ({ page }) => {
+    const row = page.getByTestId('contingencies').getByRole('row', { name: /Loss of Anvil-Birch/ });
+    await expect(row).toContainText('Anvil-Birch');
+    await expect(row).toContainText('outOfService');
+    await expect(row).toContainText('Flow on Anvil-Birch');
+    await expect(row).toContainText('excluded');
+    await row.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+    await page.getByRole('button', { name: 'Clear highlight' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeHidden();
+  });
+
+  test('assessed elements say how they are assessed', async ({ page }) => {
+    await page.getByRole('tab', { name: /Assessed elements/ }).click();
+    const table = page.getByTestId('assessed-elements');
+    const scanned = table.getByRole('row', { name: /Breaker A scanned/ });
+    await expect(scanned).toContainText('nonNativeCapacityCalculationRegion');
+    await expect(scanned).toContainText('_region');
+    await scanned.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('a table leads to an object\'s page', async ({ page }) => {
+    await page.getByTestId('contingencies').getByRole('button', { name: 'Loss of Anvil-Birch' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: 'Loss of Anvil-Birch' })).toBeVisible();
+    await expect(page.getByTestId('referrers')).toContainText('ContingencyElement.Contingency');
+  });
+
+  test('a remedial action says what it changes, and what applying it gives', async ({ page }) => {
+    await input(page).setInputFiles(RA);
+    await page.getByRole('tab', { name: /Remedial actions/ }).click();
+    const table = page.getByTestId('remedial-actions');
+    const open = table.getByRole('row', { name: /^Open Breaker A/ });
+    await expect(open).toContainText('Switch.open = 1.0 (absolute)');
+    await expect(open).toContainText('exclusive');
+    await expect(open).toContainText('Keep Breaker A closed');
+    await expect(open.getByTestId('applied')).toContainText('closed → open');
+    await expect(table.getByRole('row', { name: /^Keep Breaker A closed/ }).getByTestId('applied')).toContainText('stays closed');
+    await open.getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('schedules are drawn on one time axis, and exclusive actions active together are marked', async ({ page }) => {
+    await input(page).setInputFiles([RA, RAS]);
+    await page.getByRole('tab', { name: /Schedules/ }).click();
+    const exclusive = page.getByTestId('exclusive');
+    await expect(exclusive).toContainText('Breaker A either way');
+    await expect(exclusive).toContainText('one time more than one is active: 2024-11-20T12:00:00Z');
+    // Both actions' event schedules are on the timeline, with the overlap marked.
+    const timeline = page.getByTestId('timeline');
+    await expect(timeline.getByRole('button', { name: 'Open A, when' })).toBeVisible();
+    await expect(timeline.getByRole('button', { name: 'Keep A closed, when' })).toBeVisible();
+    await expect(timeline).toContainText('2024-11-20T12:00:00+01:00 isActive true');
+    await expect(timeline).toContainText('exclusive actions active together');
+    // A time point leads to its page.
+    await timeline.getByRole('button', { name: '2024-11-20 10:00 UTC: isActive true' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: '_00000000-0000-4000-8000-000000000504' })).toBeVisible();
+  });
+
+  test('a cancelled schedule says when, and that it has no time points', async ({ page }) => {
+    await input(page).setInputFiles([RA, RAS]);
+    await page.getByRole('tab', { name: /Schedules/ }).click();
+    const row = page.getByTestId('schedules').getByRole('row', { name: /Maintenance of Breaker A/ });
+    await expect(row).toContainText('cancelledDateTime = 2024-11-19T08:34:00Z');
+    await expect(row).toContainText('none');
+    await row.getByRole('checkbox').check();
+    await expect(page.getByTestId('timeline')).toContainText('cancelledDateTime 2024-11-19T08:34:00Z');
+    const key = page.getByTestId('schedules').getByRole('row', { name: /Shift key 1/ });
+    await expect(key).toContainText('Distribution 1');
+    await page.setViewportSize({ width: 375, height: 700 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  });
+
+  test('filters by name', async ({ page }) => {
+    await page.getByLabel('Filter the table').fill('nothing like it');
+    await expect(page.getByTestId('contingencies').getByRole('row')).toHaveCount(1);
   });
 });
 

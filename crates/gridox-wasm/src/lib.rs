@@ -77,6 +77,28 @@ impl JsSession {
         self.0.findings().to_string()
     }
 
+    pub fn contingencies(&mut self) -> String {
+        self.0.contingencies().to_string()
+    }
+
+    #[wasm_bindgen(js_name = remedialActions)]
+    pub fn remedial_actions(&mut self) -> String {
+        self.0.remedial_actions().to_string()
+    }
+
+    #[wasm_bindgen(js_name = assessedElements)]
+    pub fn assessed_elements(&mut self) -> String {
+        self.0.assessed_elements().to_string()
+    }
+
+    pub fn schedules(&mut self) -> String {
+        self.0.schedules().to_string()
+    }
+
+    pub fn datasets(&self) -> String {
+        self.0.datasets().to_string()
+    }
+
     #[wasm_bindgen(js_name = findingsOf)]
     pub fn findings_of(&self, rule: &str) -> String {
         self.0.findings_of(rule).to_string()

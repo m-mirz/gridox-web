@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
+  import type { Reveal } from '../grid/model';
   import type { TreeEntry } from '../worker/protocol';
   import Details, { type Info } from './Details.svelte';
   import GridView from './GridView.svelte';
@@ -16,35 +17,68 @@
   let gridView = $state<GridView>();
   let id = $state<string | null>(null);
   let info = $state.raw<Info | null>(null);
+  /** The objects shown before, for Back; the model's own. */
+  let history = $state<string[]>([]);
+  /** The grid is being moved to what the tree or a link chose: what it selects is no new step. */
+  let following = false;
+
+  $effect(() => {
+    void version;
+    history = [];
+  });
+
+  function remember(next: string | null) {
+    if (id && next !== id) history = [...history, id];
+  }
 
   // The tree leads the grid, and the grid the tree; `id` says when they already agree.
-  function picked(entry: TreeEntry) {
+  function show(entry: TreeEntry) {
     id = entry.id ?? null;
     info = null;
-    if (entry.grid) void gridView?.reveal(entry.grid);
-    else gridView?.unselect();
+    if (entry.grid) {
+      following = true;
+      void gridView?.reveal(entry.grid).finally(() => (following = false));
+    } else gridView?.unselect();
+  }
+
+  function picked(entry: TreeEntry) {
+    remember(entry.id ?? null);
+    show(entry);
   }
 
   function selectedOnGrid(selection: { id: string | null; info: Info } | null) {
     info = selection?.info ?? null;
     if (selection?.id === id) return;
+    if (!following && selection?.id) remember(selection.id);
     id = selection?.id ?? null;
     if (id) void tree?.reveal(id);
   }
 
+  /** Shows `at` together on the grid; how many it could. */
+  export function highlight(at: Reveal[]): number {
+    return gridView?.highlight(at) ?? 0;
+  }
+
   /** Shows the object `to` in the tree and the grid, and its details. */
-  export async function navigate(to: string) {
+  export async function navigate(to: string, record = true) {
+    if (record) remember(to);
     const entry = await tree?.reveal(to);
     id = to;
     info = null;
-    if (entry) picked(entry);
+    if (entry) show(entry);
+  }
+
+  function back() {
+    const previous = history[history.length - 1];
+    history = history.slice(0, -1);
+    if (previous) void navigate(previous, false);
   }
 </script>
 
 <div class="browse">
   <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
   <GridView bind:this={gridView} {client} {version} {findingsVersion} {validated} onselect={selectedOnGrid} />
-  <Details {client} {id} {info} {findingsVersion} onnavigate={navigate} />
+  <Details {client} {id} {info} {findingsVersion} onnavigate={(to) => navigate(to)} onback={history.length ? back : null} />
 </div>
 
 <style>

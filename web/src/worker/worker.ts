@@ -76,6 +76,16 @@ async function handle(request: Request): Promise<string> {
       return session.validate(request.common, request.quality);
     case 'findings':
       return session.findingsOf(request.rule);
+    case 'datasets':
+      return session.datasets();
+    case 'contingencies':
+      return session.contingencies();
+    case 'assessedElements':
+      return session.assessedElements();
+    case 'remedialActions':
+      return session.remedialActions();
+    case 'schedules':
+      return session.schedules();
   }
 }
 

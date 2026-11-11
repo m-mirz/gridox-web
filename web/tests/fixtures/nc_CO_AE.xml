@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:nc="https://cim4.eu/ns/nc#"
+    xmlns:cim="https://cim.ucaiug.io/ns#"
+    xmlns:dcat="http://www.w3.org/ns/dcat#" >
+  <dcat:Dataset rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f03">
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/Contingency/2.3"/>
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/AssessedElement/2.4"/>
+  </dcat:Dataset>
+  <nc:OrdinaryContingency rdf:ID="_00000000-0000-4000-8000-000000000c01">
+    <nc:Contingency.normalMustStudy>true</nc:Contingency.normalMustStudy>
+    <cim:IdentifiedObject.name>Loss of Anvil-Birch</cim:IdentifiedObject.name>
+  </nc:OrdinaryContingency>
+  <cim:ContingencyEquipment rdf:ID="_00000000-0000-4000-8000-000000000c02">
+    <cim:ContingencyElement.Contingency rdf:resource="#_00000000-0000-4000-8000-000000000c01"/>
+    <cim:ContingencyEquipment.Equipment rdf:resource="#_00000000-0000-4000-8000-000000000a32"/>
+    <cim:ContingencyEquipment.contingentStatus rdf:resource="https://cim.ucaiug.io/ns#ContingencyEquipmentStatusKind.outOfService"/>
+  </cim:ContingencyEquipment>
+  <nc:AssessedElement rdf:ID="_00000000-0000-4000-8000-000000000e01">
+    <nc:AssessedElement.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a32"/>
+    <nc:AssessedElement.SecuredForRegion rdf:resource="#_region"/>
+    <nc:AssessedElement.inBaseCase>true</nc:AssessedElement.inBaseCase>
+    <nc:AssessedElement.isCombinableWithContingency>true</nc:AssessedElement.isCombinableWithContingency>
+    <cim:IdentifiedObject.name>Flow on Anvil-Birch</cim:IdentifiedObject.name>
+  </nc:AssessedElement>
+  <nc:AssessedElement rdf:ID="_00000000-0000-4000-8000-000000000e02">
+    <nc:AssessedElement.ConductingEquipment rdf:resource="#_00000000-0000-4000-8000-000000000a30"/>
+    <nc:AssessedElement.ScannedForRegion rdf:resource="#_region"/>
+    <nc:AssessedElement.inBaseCase>false</nc:AssessedElement.inBaseCase>
+    <nc:AssessedElement.exclusionReason rdf:resource="https://cim4.eu/ns/nc#SecuredExclusionReasonKind.nonNativeCapacityCalculationRegion"/>
+    <cim:IdentifiedObject.name>Breaker A scanned</cim:IdentifiedObject.name>
+  </nc:AssessedElement>
+  <nc:AssessedElementWithContingency rdf:ID="_00000000-0000-4000-8000-000000000e03">
+    <nc:AssessedElementWithContingency.AssessedElement rdf:resource="#_00000000-0000-4000-8000-000000000e01"/>
+    <nc:AssessedElementWithContingency.Contingency rdf:resource="#_00000000-0000-4000-8000-000000000c01"/>
+    <nc:AssessedElementWithContingency.combinationConstraintKind rdf:resource="https://cim4.eu/ns/nc#ElementCombinationConstraintKind.excluded"/>
+  </nc:AssessedElementWithContingency>
+</rdf:RDF>

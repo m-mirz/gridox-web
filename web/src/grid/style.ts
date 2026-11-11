@@ -90,10 +90,14 @@ export function stylesheet(): cytoscape.StylesheetJson {
     ...bySeverity("underlay-color").filter((s) => !s.selector.includes('"none"'))
       .map((s) => ({ ...s, selector: `edge${s.selector}`, style: { ...s.style, "underlay-opacity": 0.4, "underlay-padding": 5 } })),
     { selector: "edge.disconnected", style: { "line-style": "dashed" } },
+    // What a table row is about: in the focus colour, around and along it.
+    { selector: "node.highlighted", style: { "border-color": focus, "border-width": 4 } },
+    { selector: "edge.highlighted", style: { "line-color": focus, width: 4, opacity: 1 } },
     { selector: "node:selected", style: { "background-color": focus, "background-opacity": 1 } },
     { selector: 'node[kind = "group"]:selected', style: { "background-opacity": 0.15 } },
     { selector: 'node[kind = "symbol"]:selected', style: { "background-opacity": 0.3 } },
     { selector: "edge:selected", style: { "line-color": focus, opacity: 1 } },
-    { selector: ".dim", style: { opacity: 0.15 } },
+    // Faded, findings' halos too, which do not take the element's opacity.
+    { selector: ".dim", style: { opacity: 0.15, "underlay-opacity": 0 } },
   ] as cytoscape.StylesheetJson;
 }
