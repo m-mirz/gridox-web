@@ -10,6 +10,7 @@ const GRID = fixture('grid_EQ.xml');
 const SECOND = fixture('second_EQ.xml');
 const NC = fixture('nc_CO_AE.xml');
 const RA = fixture('nc_RA.xml');
+const RAS = fixture('nc_RAS.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -418,6 +419,37 @@ test.describe('network codes', () => {
     await expect(table.getByRole('row', { name: /^Keep Breaker A closed/ }).getByTestId('applied')).toContainText('stays closed');
     await open.getByRole('button', { name: 'Show on grid' }).click();
     await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('schedules are drawn on one time axis, and exclusive actions active together are marked', async ({ page }) => {
+    await input(page).setInputFiles([RA, RAS]);
+    await page.getByRole('tab', { name: /Schedules/ }).click();
+    const exclusive = page.getByTestId('exclusive');
+    await expect(exclusive).toContainText('Breaker A either way');
+    await expect(exclusive).toContainText('one time more than one is active: 2024-11-20T12:00:00Z');
+    // Both actions' event schedules are on the timeline, with the overlap marked.
+    const timeline = page.getByTestId('timeline');
+    await expect(timeline.getByRole('button', { name: 'Open A, when' })).toBeVisible();
+    await expect(timeline.getByRole('button', { name: 'Keep A closed, when' })).toBeVisible();
+    await expect(timeline).toContainText('2024-11-20T12:00:00+01:00 isActive true');
+    await expect(timeline).toContainText('exclusive actions active together');
+    // A time point leads to its page.
+    await timeline.getByRole('button', { name: '2024-11-20 10:00 UTC: isActive true' }).click();
+    await expect(page.getByTestId('details').getByRole('heading', { name: '_00000000-0000-4000-8000-000000000504' })).toBeVisible();
+  });
+
+  test('a cancelled schedule says when, and that it has no time points', async ({ page }) => {
+    await input(page).setInputFiles([RA, RAS]);
+    await page.getByRole('tab', { name: /Schedules/ }).click();
+    const row = page.getByTestId('schedules').getByRole('row', { name: /Maintenance of Breaker A/ });
+    await expect(row).toContainText('cancelledDateTime = 2024-11-19T08:34:00Z');
+    await expect(row).toContainText('none');
+    await row.getByRole('checkbox').check();
+    await expect(page.getByTestId('timeline')).toContainText('cancelledDateTime 2024-11-19T08:34:00Z');
+    const key = page.getByTestId('schedules').getByRole('row', { name: /Shift key 1/ });
+    await expect(key).toContainText('Distribution 1');
+    await page.setViewportSize({ width: 375, height: 700 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   });
 
   test('filters by name', async ({ page }) => {

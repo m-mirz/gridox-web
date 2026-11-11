@@ -91,6 +91,10 @@ impl JsSession {
         self.0.assessed_elements().to_string()
     }
 
+    pub fn schedules(&mut self) -> String {
+        self.0.schedules().to_string()
+    }
+
     pub fn datasets(&self) -> String {
         self.0.datasets().to_string()
     }

@@ -1026,6 +1026,468 @@ impl Session {
     }
 }
 
+/// Time points by schedule: (time in seconds, if readable; id; point), in time order.
+type Points<'a> = BTreeMap<&'a str, Vec<(Option<i64>, &'a str, &'a cimmodel::Element)>>;
+
+/// A schedule's yes/no values by time, and its interpolation.
+type Flags = (Vec<(i64, bool)>, Option<String>);
+
+/// Schedules: their time points, what they are about, and the exclusive remedial actions they
+/// activate at the same time.
+impl Session {
+    /// A field's declaration, by any of the element's types.
+    fn declared(
+        element: &cimmodel::Element,
+        key: &str,
+    ) -> Option<&'static cimmodel::base::AttrDef> {
+        let registry = type_registry();
+        element.types().find_map(|class| registry.attr(class, key))
+    }
+
+    /// The objects `element` refers to, as (field, target), by field: associations, and references
+    /// no class table declares; not an enumeration's value.
+    fn associations(element: &cimmodel::Element) -> Vec<(&'static str, &str)> {
+        let mut found: Vec<(&'static str, &str)> = element
+            .fields()
+            .iter()
+            .filter(|(key, _)| {
+                !Self::declared(element, key).is_some_and(|a| matches!(a.kind, AttrKind::Enum))
+            })
+            .flat_map(|(&key, value)| {
+                let targets: Vec<&str> = match value {
+                    FieldValue::Resource(v) => vec![mrid_of(v)],
+                    FieldValue::ResourceList(vs) => vs.iter().map(|v| mrid_of(v)).collect(),
+                    FieldValue::Text(_) | FieldValue::TextList(_) => Vec::new(),
+                };
+                targets.into_iter().map(move |t| (key, t))
+            })
+            .collect();
+        found.sort_unstable();
+        found
+    }
+
+    /// What `element` writes of its own, by field: values and enumerations, without its name and
+    /// mRID, and without `skip`. `time` marks a date and time.
+    fn values(element: &cimmodel::Element, skip: &[&str]) -> Vec<Value> {
+        let mut found: Vec<(&str, Value)> = element
+            .fields()
+            .iter()
+            .filter(|(key, _)| !key.starts_with("IdentifiedObject.") && !skip.contains(key))
+            .filter_map(|(&key, value)| {
+                let declared = Self::declared(element, key);
+                let text = match (value, declared.map(|a| &a.kind)) {
+                    (FieldValue::Text(_), _) => element.get_str(key)?,
+                    (FieldValue::Resource(_), Some(AttrKind::Enum)) => element.get_ref(key)?,
+                    _ => return None,
+                };
+                let short = key.rsplit_once('.').map_or(key, |(_, k)| k);
+                let value = mrid_of(text);
+                // An enumeration's value without its type: `Currency.EUR` → `EUR`.
+                let value = match declared.map(|a| &a.kind) {
+                    Some(AttrKind::Enum) => value.rsplit_once('.').map_or(value, |(_, v)| v),
+                    _ => value,
+                };
+                let time = declared.is_some_and(|a| a.xsd == "dateTime");
+                Some((key, json!({ "key": short, "value": value, "time": time })))
+            })
+            .collect();
+        found.sort_by_key(|(key, _)| *key);
+        found.into_iter().map(|(_, v)| v).collect()
+    }
+
+    /// The schedules, in groups of those that refer to one another (an event schedule and the
+    /// remedial action schedule it times, an availability schedule and its planned events): what
+    /// each group is about, and each schedule's interpolation, values and time points, in time
+    /// order. Then each group of remedial actions depending exclusively on one another, with the
+    /// times at which more than one of them is active: by the event schedules of their remedial
+    /// action schedules, at each of those schedules' time points, a value holding between points
+    /// as the schedule's interpolation says (`previous`, `next`; else only at its points).
+    pub fn schedules(&mut self) -> Value {
+        // Time points by schedule.
+        let mut points: Points = BTreeMap::new();
+        let mut point_classes: Vec<&str> = self
+            .dataset
+            .by_type
+            .keys()
+            .map(|k| k.rsplit_once(':').map_or(k.as_str(), |(_, n)| n))
+            .filter(|k| k.ends_with("TimePoint"))
+            .collect();
+        point_classes.sort_unstable();
+        point_classes.dedup();
+        for local in point_classes {
+            for (id, element) in self.of_type(local) {
+                let Some((_, schedule)) = Self::associations(element).into_iter().next() else {
+                    continue;
+                };
+                let at = Self::at_time(element).and_then(seconds);
+                points.entry(schedule).or_default().push((at, id, element));
+            }
+        }
+        for list in points.values_mut() {
+            list.sort_by(|a, b| (a.0.is_none(), a.0, a.1).cmp(&(b.0.is_none(), b.0, b.1)));
+        }
+        // The schedules: what the time points name, and every object of a schedule class.
+        let mut schedules: Vec<&str> = points.keys().copied().collect();
+        schedules.extend(
+            self.dataset
+                .entries
+                .iter()
+                .filter(|(_, e)| e.types().any(|c| c.local.ends_with("Schedule")))
+                .map(|(id, _)| id.as_str()),
+        );
+        schedules.sort_unstable();
+        schedules.dedup();
+        let index: BTreeMap<&str, usize> =
+            schedules.iter().enumerate().map(|(i, s)| (*s, i)).collect();
+        // Linked into groups by the references between them.
+        let mut parent: Vec<usize> = (0..schedules.len()).collect();
+        fn root(parent: &mut [usize], mut i: usize) -> usize {
+            while parent[i] != i {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+            i
+        }
+        for (i, id) in schedules.iter().enumerate() {
+            let Some(element) = self.dataset.entries.get(*id) else {
+                continue;
+            };
+            for (_, target) in Self::associations(element) {
+                if let Some(&j) = index.get(target) {
+                    let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+        }
+        let mut groups: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+        for (i, id) in schedules.iter().enumerate() {
+            groups.entry(root(&mut parent, i)).or_default().push(id);
+        }
+        // What refers to a schedule, but is neither a schedule nor a time point.
+        let mut referred: BTreeMap<&str, Vec<(&'static str, &str)>> = BTreeMap::new();
+        for (source, element) in &self.dataset.entries {
+            if index.contains_key(source.as_str())
+                || element.types().any(|c| c.local.ends_with("TimePoint"))
+            {
+                continue;
+            }
+            for (key, target) in Self::associations(element) {
+                if let Some((&schedule, _)) = index.get_key_value(target) {
+                    referred
+                        .entry(schedule)
+                        .or_default()
+                        .push((key, source.as_str()));
+                }
+            }
+        }
+        let mut group_of: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut rows: Vec<(Option<i64>, Value, Vec<String>)> = Vec::new();
+        for (n, members) in groups.values().enumerate() {
+            let mut about: Vec<(&str, &str)> = Vec::new();
+            let mut by: Vec<(&str, &str)> = Vec::new();
+            let mut times: Vec<i64> = Vec::new();
+            let shown: Vec<Value> = members
+                .iter()
+                .map(|id| {
+                    group_of.insert(id, n);
+                    let element = self.dataset.entries.get(*id);
+                    let mut links = Vec::new();
+                    for (key, target) in element.map(Self::associations).unwrap_or_default() {
+                        let short = key.rsplit_once('.').map_or(key, |(_, k)| k);
+                        if index.contains_key(target) {
+                            let mut cell = self.linked(target);
+                            cell["kind"] = json!(short);
+                            links.push(cell);
+                        } else if !about.iter().any(|(_, t)| *t == target) {
+                            about.push((short, target));
+                        }
+                    }
+                    for (key, source) in referred.get(*id).map_or(&[][..], Vec::as_slice) {
+                        if !by.iter().any(|(_, s)| s == source) {
+                            by.push((key, source));
+                        }
+                    }
+                    let values = element.map_or(Vec::new(), |e| {
+                        Self::values(e, &["BaseTimeSeries.interpolationKind"])
+                    });
+                    times.extend(
+                        values
+                            .iter()
+                            .filter(|v| v["time"] == true)
+                            .filter_map(|v| seconds(v["value"].as_str()?)),
+                    );
+                    let own = points.get(*id).map_or(&[][..], Vec::as_slice);
+                    times.extend(own.iter().filter_map(|p| p.0));
+                    let mut cell = self.linked(id);
+                    cell["interpolation"] = json!(element.and_then(|e| Self::text(e, "BaseTimeSeries.interpolationKind")));
+                    cell["values"] = json!(values);
+                    cell["links"] = json!(links);
+                    cell["points"] = own
+                        .iter()
+                        .map(|(_, p, point)| {
+                            json!({
+                                "id": p, "atTime": Self::at_time(point),
+                                "values": Self::values(point, &[]).into_iter().filter(|v| v["key"] != "atTime").collect::<Vec<_>>(),
+                            })
+                        })
+                        .collect();
+                    cell
+                })
+                .collect();
+            let first = times.iter().min().copied();
+            let row = json!({
+                "id": members[0],
+                "schedules": shown,
+                "about": about.iter().map(|(key, t)| {
+                    let mut cell = self.linked(t);
+                    cell["kind"] = json!(key);
+                    cell
+                }).collect::<Vec<_>>(),
+                "referredBy": by.iter().map(|(key, s)| {
+                    let mut cell = self.linked(s);
+                    cell["kind"] = json!(key);
+                    cell
+                }).collect::<Vec<_>>(),
+            });
+            let places = about
+                .iter()
+                .chain(&by)
+                .map(|(_, t)| t.to_string())
+                .collect();
+            rows.push((first, row, places));
+        }
+        // Groups with times first, in time order.
+        rows.sort_by(|a, b| {
+            (a.0.is_none(), a.0, a.1["id"].as_str()).cmp(&(b.0.is_none(), b.0, b.1["id"].as_str()))
+        });
+        let together = self.active_together(&points, &groups, &group_of);
+        let rows: Vec<Value> = rows
+            .into_iter()
+            .map(|(_, mut row, about)| {
+                let places: Vec<Value> =
+                    about.iter().filter_map(|t| self.place_on_grid(t)).collect();
+                row["grid"] = json!(places);
+                row
+            })
+            .collect();
+        json!({ "groups": rows, "exclusive": together })
+    }
+
+    /// A time point's `atTime`, whatever its class.
+    fn at_time(point: &cimmodel::Element) -> Option<&str> {
+        let key = point.fields().keys().find(|k| k.ends_with(".atTime"))?;
+        point.get_str(key)
+    }
+
+    /// The remedial actions that depend exclusively on one another, by group, with the times at
+    /// which more than one of them is active. See [`Session::schedules`].
+    fn active_together(
+        &self,
+        points: &Points,
+        groups: &BTreeMap<usize, Vec<&str>>,
+        group_of: &BTreeMap<&str, usize>,
+    ) -> Vec<Value> {
+        let groups: Vec<&Vec<&str>> = groups.values().collect();
+        let links = self.referrers_by(&[
+            "RemedialActionDependency.DependingRemedialActionGroup",
+            "RemedialActionSchedule.RemedialAction",
+        ]);
+        let of = |target: &str, key: &str| -> Vec<&str> {
+            links.get(target).map_or(Vec::new(), |list| {
+                list.iter()
+                    .filter(|(_, k)| *k == key)
+                    .map(|(s, _)| *s)
+                    .collect()
+            })
+        };
+        // Each schedule's points as (time, active), and its interpolation.
+        let series = |schedule: &str| -> Flags {
+            let list = points.get(schedule).map_or(&[][..], Vec::as_slice);
+            let flags = list
+                .iter()
+                .filter_map(|(at, _, point)| {
+                    let active = Self::values(point, &[])
+                        .iter()
+                        .find_map(|v| match v["value"].as_str()? {
+                            "true" => Some(true),
+                            "false" => Some(false),
+                            _ => None,
+                        })?;
+                    Some(((*at)?, active))
+                })
+                .collect();
+            let kind = self
+                .dataset
+                .entries
+                .get(schedule)
+                .and_then(|e| Self::text(e, "BaseTimeSeries.interpolationKind"));
+            (flags, kind)
+        };
+        let active_at = |(flags, kind): &Flags, t: i64| -> bool {
+            if let Some((_, a)) = flags.iter().rev().find(|(at, _)| *at == t) {
+                return *a;
+            }
+            match kind.as_deref() {
+                Some("previous") => flags
+                    .iter()
+                    .rev()
+                    .find(|(at, _)| *at < t)
+                    .is_some_and(|(_, a)| *a),
+                Some("next") => flags
+                    .iter()
+                    .find(|(at, _)| *at > t)
+                    .is_some_and(|(_, a)| *a),
+                _ => false,
+            }
+        };
+        let mut found = Vec::new();
+        let mut group_ids: Vec<&str> = self
+            .of_type("RemedialActionDependency")
+            .filter_map(|(_, d)| d.get_ref("RemedialActionDependency.DependingRemedialActionGroup"))
+            .map(mrid_of)
+            .collect();
+        group_ids.sort_unstable();
+        group_ids.dedup();
+        for group in group_ids {
+            let mut actions: Vec<&str> = of(
+                group,
+                "RemedialActionDependency.DependingRemedialActionGroup",
+            )
+            .into_iter()
+            .filter_map(|d| self.dataset.entries.get(d))
+            .filter(|d| {
+                Self::text(d, "RemedialActionDependency.kind").as_deref() == Some("exclusive")
+            })
+            .filter_map(|d| {
+                d.get_ref("RemedialActionDependency.RemedialAction")
+                    .map(mrid_of)
+            })
+            .collect();
+            actions.sort_unstable();
+            actions.dedup();
+            if actions.len() < 2 {
+                continue;
+            }
+            // Each action's activation: the time series of its remedial action schedules' groups.
+            let mut timed: Vec<(&str, Vec<Flags>, Vec<&str>)> = Vec::new();
+            for action in &actions {
+                let mut members: Vec<&str> = of(action, "RemedialActionSchedule.RemedialAction")
+                    .into_iter()
+                    .filter_map(|s| group_of.get(s))
+                    .flat_map(|&g| groups[g].iter().copied())
+                    .collect();
+                members.sort_unstable();
+                members.dedup();
+                let all: Vec<_> = members
+                    .iter()
+                    .map(|s| series(s))
+                    .filter(|s| !s.0.is_empty())
+                    .collect();
+                let schedules = members
+                    .iter()
+                    .copied()
+                    .filter(|s| points.contains_key(s))
+                    .collect();
+                timed.push((action, all, schedules));
+            }
+            if timed.iter().all(|(_, s, _)| s.is_empty()) {
+                continue;
+            }
+            let mut candidates: Vec<i64> = timed
+                .iter()
+                .flat_map(|(_, all, _)| {
+                    all.iter()
+                        .flat_map(|(flags, _)| flags.iter().map(|(t, _)| *t))
+                })
+                .collect();
+            candidates.sort_unstable();
+            candidates.dedup();
+            let times: Vec<Value> = candidates
+                .into_iter()
+                .filter_map(|t| {
+                    let on: Vec<&str> = timed
+                        .iter()
+                        .filter(|(_, all, _)| all.iter().any(|s| active_at(s, t)))
+                        .map(|(a, _, _)| *a)
+                        .collect();
+                    (on.len() > 1).then(|| json!({ "at": iso(t), "actions": on }))
+                })
+                .collect();
+            found.push(json!({
+                "group": self.linked(group),
+                "actions": timed.iter().map(|(a, _, schedules)| {
+                    let mut cell = self.linked(a);
+                    cell["schedules"] = json!(schedules);
+                    cell
+                }).collect::<Vec<_>>(),
+                "together": times,
+            }));
+        }
+        found
+    }
+}
+
+/// An `xsd:dateTime` as seconds since 1970, UTC: `2024-11-20T02:30:00Z`, with or without seconds'
+/// fractions (dropped) and an offset (`+01:00`; none is taken as UTC).
+fn seconds(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let (date, time) = text.split_once('T')?;
+    let mut d = date.splitn(3, '-');
+    let (y, m, day): (i64, i64, i64) = (
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+    );
+    let (clock, offset) = match time.find(['Z', '+', '-']) {
+        Some(at) => (&time[..at], &time[at..]),
+        None => (time, ""),
+    };
+    let mut c = clock.splitn(3, ':');
+    let (h, min): (i64, i64) = (c.next()?.parse().ok()?, c.next()?.parse().ok()?);
+    let s: i64 = c
+        .next()
+        .map_or(Some(0), |s| s.split('.').next()?.parse().ok())?;
+    let shift = match offset {
+        "" | "Z" => 0,
+        _ => {
+            let sign = if offset.starts_with('-') { -1 } else { 1 };
+            let (oh, om) = offset[1..].split_once(':')?;
+            sign * (oh.parse::<i64>().ok()? * 3600 + om.parse::<i64>().ok()? * 60)
+        }
+    };
+    if !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Days from the civil date (Howard Hinnant's algorithm).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + h * 3600 + min * 60 + s - shift)
+}
+
+/// Seconds since 1970 as `2024-11-20T02:30:00Z`.
+fn iso(t: i64) -> String {
+    let (days, rest) = (t.div_euclid(86_400), t.rem_euclid(86_400));
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    )
+}
+
 impl Session {
     /// What validation found on the object `id`.
     fn findings_on(&self, id: &str) -> Vec<Value> {
@@ -1522,12 +1984,160 @@ mod tests {
         assert_eq!(dependency["with"][0]["label"], "Keep Breaker A closed");
     }
 
+    const RAS: &str = include_str!("../../../web/tests/fixtures/nc_RAS.xml");
+
+    /// With the contingencies too, as the page's tests load them: no identifier may clash.
+    fn with_ras() -> Session {
+        let mut session = with_ra();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.add_file("nc_RAS.xml", RAS);
+        session
+    }
+
+    fn e(id: &str) -> String {
+        format!("_00000000-0000-4000-8000-000000000{id}")
+    }
+
+    #[test]
+    fn the_schedule_fixture_decodes_as_declared() {
+        let mut session = with_ras();
+        for id in [
+            "501", "502", "503", "512", "513", "521", "522", "531", "532", "533",
+        ] {
+            let object = session.object(&e(id));
+            assert_eq!(object["foreign"], false, "{id}");
+            let undeclared: Vec<_> = object["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f["declared"] == false)
+                .collect();
+            assert!(undeclared.is_empty(), "{id}: {undeclared:?}");
+        }
+    }
+
+    #[test]
+    fn schedules_that_refer_to_one_another_are_a_group_with_their_points_in_time_order() {
+        let schedules = with_ras().schedules();
+        let groups = schedules["groups"].as_array().unwrap();
+        let open = groups
+            .iter()
+            .find(|g| {
+                g["about"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|a| a["label"] == "Open Breaker A")
+            })
+            .unwrap();
+        let ids: Vec<&str> = open["schedules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, [e("501"), e("502")]);
+        assert_eq!(open["about"][0]["kind"], "RemedialAction");
+        let event = &open["schedules"][1];
+        assert_eq!(event["interpolation"], "none");
+        assert_eq!(event["links"][0]["id"], e("501"));
+        assert_eq!(
+            open["schedules"][0]["values"],
+            json!([{ "key": "statusKind", "value": "proposed", "time": false }])
+        );
+        let times: Vec<&str> = event["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["atTime"].as_str().unwrap())
+            .collect();
+        assert_eq!(times, ["2024-11-20T10:00:00Z", "2024-11-20T12:00:00Z"]);
+        assert_eq!(
+            event["points"][0]["values"],
+            json!([{ "key": "isActive", "value": "true", "time": false }])
+        );
+        // In time order, a schedule's own dates included: the cancellation on the 19th, then
+        // Open's group from 10:00, Keep closed's from 11:00 UTC; the shift key's from 11:30.
+        let order: Vec<&str> = groups.iter().map(|g| g["id"].as_str().unwrap()).collect();
+        assert_eq!(order, [e("522"), e("501"), e("511"), e("531")]);
+    }
+
+    #[test]
+    fn a_cancelled_schedule_without_points_says_when_it_was_cancelled() {
+        let schedules = with_ras().schedules();
+        let groups = schedules["groups"].as_array().unwrap();
+        let cancelled = groups.iter().find(|g| g["id"] == e("522")).unwrap();
+        let schedule = &cancelled["schedules"][0];
+        assert_eq!(schedule["points"], json!([]));
+        assert_eq!(
+            schedule["values"],
+            json!([
+                { "key": "cancelledDateTime", "value": "2024-11-19T08:34:00Z", "time": true },
+                { "key": "causeKind", "value": "maintenance", "time": false },
+            ])
+        );
+        assert_eq!(cancelled["about"][0]["label"], "Make Breaker A available");
+    }
+
+    #[test]
+    fn a_schedule_says_what_refers_to_it() {
+        let schedules = with_ras().schedules();
+        let groups = schedules["groups"].as_array().unwrap();
+        let key = groups.iter().find(|g| g["id"] == e("531")).unwrap();
+        assert_eq!(key["referredBy"][0]["label"], "Distribution 1");
+        assert_eq!(
+            key["referredBy"][0]["kind"],
+            "PowerShiftKeyDistribution.PowerShiftKeySchedule"
+        );
+        assert_eq!(
+            key["schedules"][0]["points"][0]["values"],
+            json!([{ "key": "participationFactor", "value": "0.5", "time": false }])
+        );
+    }
+
+    #[test]
+    fn exclusive_actions_active_together_are_found_by_their_interpolation() {
+        let schedules = with_ras().schedules();
+        let exclusive = &schedules["exclusive"][0];
+        assert_eq!(exclusive["group"]["label"], "Breaker A either way");
+        // The schedules giving its activation: those with time points.
+        assert_eq!(exclusive["actions"][0]["schedules"], json!([e("502")]));
+        // Keep closed is active from 11:00 UTC on (previous, written as 12:00+01:00), Open at its
+        // points only (none): only at 12:00 are both.
+        assert_eq!(
+            exclusive["together"],
+            json!([{ "at": "2024-11-20T12:00:00Z", "actions": [e("d01"), e("d11")] }])
+        );
+    }
+
+    #[test]
+    fn date_times_read_with_their_offset() {
+        assert_eq!(seconds("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            seconds("2024-11-20T12:00:00+01:00"),
+            seconds("2024-11-20T11:00:00Z")
+        );
+        assert_eq!(
+            seconds("2024-02-29T23:59:59.5-00:30"),
+            seconds("2024-03-01T00:29:59Z")
+        );
+        assert_eq!(seconds("2024-11-20"), None);
+        assert_eq!(
+            iso(seconds("2024-02-29T13:05:09Z").unwrap()),
+            "2024-02-29T13:05:09Z"
+        );
+    }
+
     #[test]
     fn a_model_without_network_codes_has_empty_tables() {
         let mut session = grid_session();
         assert_eq!(session.contingencies(), json!([]));
         assert_eq!(session.assessed_elements(), json!([]));
         assert_eq!(session.remedial_actions(), json!([]));
+        assert_eq!(
+            session.schedules(),
+            json!({ "groups": [], "exclusive": [] })
+        );
     }
 
     #[test]

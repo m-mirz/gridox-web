@@ -9,7 +9,8 @@
   }: { links: Linked[]; onnavigate: (id: string) => void; /** Within a line of text, not one per line. */ inline?: boolean } = $props();
 </script>
 
-{#each links as link (link.id)}
+{#each links as link, i (link.id)}
+  {#if inline && i > 0}<span class="separator">, </span>{/if}
   <span class="link-cell" class:inline>
     <button type="button" class="link" class:missing={link.missing} title={link.missing ? 'Not in the files loaded' : (link.class ?? undefined)} onclick={() => onnavigate(link.id)}>{link.label ?? link.id}</button>
     {#if link.status ?? link.kind}<small>{link.status ?? link.kind}</small>{/if}
@@ -44,6 +45,10 @@
 
   small {
     margin-left: 0.25rem;
+    color: var(--muted);
+  }
+
+  .separator {
     color: var(--muted);
   }
 </style>

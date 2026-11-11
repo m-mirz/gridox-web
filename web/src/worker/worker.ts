@@ -84,6 +84,8 @@ async function handle(request: Request): Promise<string> {
       return session.assessedElements();
     case 'remedialActions':
       return session.remedialActions();
+    case 'schedules':
+      return session.schedules();
   }
 }
 

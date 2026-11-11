@@ -2,8 +2,9 @@
   import type { Reveal } from '../grid/model';
   import { count } from '../grid/model';
   import type { WorkerClient } from '../worker/client';
-  import type { AssessedElement, Contingency, Linked, RemedialAction, SwitchState } from '../worker/protocol';
+  import type { AssessedElement, Contingency, ExclusiveActions, Linked, RemedialAction, ScheduleGroup, Schedules, SwitchState } from '../worker/protocol';
   import Links from './Links.svelte';
+  import Timeline from './Timeline.svelte';
 
   let {
     client,
@@ -22,7 +23,11 @@
   let contingencies = $state.raw<Contingency[]>([]);
   let assessed = $state.raw<AssessedElement[]>([]);
   let actions = $state.raw<RemedialAction[]>([]);
-  let tab = $state<'contingencies' | 'assessed' | 'actions'>('contingencies');
+  let schedules = $state.raw<Schedules>({ groups: [], exclusive: [] });
+  let tab = $state<'contingencies' | 'assessed' | 'actions' | 'schedules'>('contingencies');
+  /** The schedule groups on the timeline, and the times marked across it. */
+  let picked = $state<string[]>([]);
+  let marks = $state.raw<{ at: string; label: string }[]>([]);
   let filter = $state('');
   /** What the last "Show on grid" came to, when the grid showed none of it. */
   let notOnGrid = $state<string | null>(null);
@@ -34,12 +39,20 @@
       client.request<'contingencies'>({ kind: 'contingencies' }),
       client.request<'assessedElements'>({ kind: 'assessedElements' }),
       client.request<'remedialActions'>({ kind: 'remedialActions' }),
-    ]).then(([c, a, r]) => {
+      client.request<'schedules'>({ kind: 'schedules' }),
+    ]).then(([c, a, r, s]) => {
       if (!current) return;
       contingencies = c;
       assessed = a;
       actions = r;
-      tab = c.length ? 'contingencies' : a.length ? 'assessed' : 'actions';
+      schedules = s;
+      tab = c.length ? 'contingencies' : a.length ? 'assessed' : r.length ? 'actions' : 'schedules';
+      const together = s.exclusive.find((e) => e.together.length);
+      if (together) timeAlong(together);
+      else {
+        picked = s.groups.filter((g) => g.schedules.some((x) => x.points.length)).slice(0, 1).map((g) => g.id);
+        marks = [];
+      }
     });
     return () => {
       current = false;
@@ -53,7 +66,39 @@
   let shownContingencies = $derived(contingencies.filter(matches));
   let shownAssessed = $derived(assessed.filter(matches));
   let shownActions = $derived(actions.filter(matches));
-  let shown = $derived(tab === 'contingencies' ? shownContingencies.length : tab === 'assessed' ? shownAssessed.length : shownActions.length);
+  /** A schedule group matches by any of its schedules, or what they are about or referred to by. */
+  let shownGroups = $derived(schedules.groups.filter((g) => [...g.schedules, ...g.about, ...g.referredBy].some(matches)));
+  let shown = $derived(
+    { contingencies: shownContingencies, assessed: shownAssessed, actions: shownActions, schedules: shownGroups }[tab].length,
+  );
+
+  /** The schedules the timeline draws: those of the groups picked with points or dates of their own. */
+  let drawn = $derived(
+    schedules.groups
+      .filter((g) => picked.includes(g.id))
+      .flatMap((g) => g.schedules.map((s) => ({ ...s, about: g.about.length ? g.about : g.referredBy })))
+      .filter((s) => s.points.length || s.values.some((v) => v.time)),
+  );
+  const pointCount = (g: ScheduleGroup) => g.schedules.reduce((n, s) => n + s.points.length, 0);
+  /** The first and last time point of a group, as written. */
+  function between(g: ScheduleGroup): string {
+    const times = g.schedules.flatMap((s) => s.points.map((p) => p.atTime ?? '')).filter(Boolean).sort();
+    if (!times.length) return '';
+    return times.length === 1 || times[0] === times[times.length - 1] ? times[0] : `${times[0]} – ${times[times.length - 1]}`;
+  }
+  const label = (link: Linked) => link.label ?? link.id;
+
+  /** Puts the groups giving exclusive actions' activation on the timeline, and marks when they overlap. */
+  function timeAlong(e: ExclusiveActions) {
+    const ids = new Set(e.actions.flatMap((a) => a.schedules));
+    picked = schedules.groups.filter((g) => g.schedules.some((s) => ids.has(s.id))).map((g) => g.id);
+    marks = e.together.map((t) => ({ at: t.at, label: `${t.at}: ${t.actions.length} exclusive actions active` }));
+  }
+
+  function pick(id: string, on: boolean) {
+    picked = on ? [...picked, id] : picked.filter((p) => p !== id);
+    marks = [];
+  }
 
   /** A switch's state as the model gives it, and as the action leaves it. */
   const position = (open: string | boolean | null) => (open === null ? 'not given' : open === true || open === 'true' ? 'open' : 'closed');
@@ -70,7 +115,7 @@
   const one = (link: Linked | null) => (link ? [link] : []);
 </script>
 
-{#if contingencies.length || assessed.length || actions.length}
+{#if contingencies.length || assessed.length || actions.length || schedules.groups.length}
   <section aria-label="Network codes" data-testid="network-codes">
     <details open>
       <summary><h2>Network codes</h2></summary>
@@ -84,12 +129,77 @@
         <button type="button" role="tab" aria-selected={tab === 'actions'} onclick={() => (tab = 'actions')}>
           Remedial actions <span class="sub">{actions.length.toLocaleString('en')}</span>
         </button>
+        <button type="button" role="tab" aria-selected={tab === 'schedules'} onclick={() => (tab = 'schedules')}>
+          Schedules <span class="sub">{schedules.groups.length.toLocaleString('en')}</span>
+        </button>
         <input type="search" placeholder="Filter by name or mRID" aria-label="Filter the table" bind:value={filter} />
       </div>
       {#if notOnGrid}<p class="sub" role="status">{notOnGrid}</p>{/if}
 
+      {#if tab === 'schedules'}
+        {#each schedules.exclusive as e (e.group.id)}
+          <div class="exclusive" class:clash={e.together.length} data-testid="exclusive">
+            <Links inline links={[e.group]} {onnavigate} />:
+            <Links inline links={e.actions} {onnavigate} /> <span class="sub">exclude one another;</span>
+            {#if e.together.length}
+              <strong>{e.together.length === 1 ? 'one time' : `${e.together.length} times`} more than one is active:</strong>
+              {#each e.together as t, i}<time class="at" datetime={t.at}>{t.at}</time>{i < e.together.length - 1 ? ', ' : '.'}{/each}
+            {:else}
+              never active together.
+            {/if}
+            <button type="button" onclick={() => timeAlong(e)}>Show on timeline</button>
+          </div>
+        {/each}
+        {#if picked.length}
+          <Timeline schedules={drawn} {marks} {onnavigate} />
+        {:else}
+          <p class="sub">Tick schedules below to draw them on one time axis.</p>
+        {/if}
+      {/if}
+
       <div class="scroll">
-        {#if tab === 'contingencies'}
+        {#if tab === 'schedules'}
+          <table data-testid="schedules">
+            <thead>
+              <tr><th>Draw</th><th>About</th><th>Schedules</th><th>Time points</th><th>Referred to by</th><th></th></tr>
+            </thead>
+            <tbody>
+              {#each shownGroups as g (g.id)}
+                <tr>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Draw ${g.schedules.map(label).join(', ')} on the timeline`}
+                      checked={picked.includes(g.id)}
+                      onchange={(e) => pick(g.id, e.currentTarget.checked)}
+                    />
+                  </td>
+                  <td><Links links={g.about} {onnavigate} /></td>
+                  <td>
+                    {#each g.schedules as s (s.id)}
+                      <div class="part">
+                        <Links inline links={[{ id: s.id, label: s.label ?? s.class, class: s.class }]} {onnavigate} />
+                        <span class="sub">{s.class}{s.interpolation ? `, ${s.interpolation}` : ''}</span>
+                        {#each s.values as v}
+                          <small class="value" class:dated={v.time}>{v.key} = {v.value}</small>
+                        {/each}
+                      </div>
+                    {/each}
+                  </td>
+                  <td>
+                    {#if pointCount(g)}
+                      {pointCount(g)} <small class="value">{between(g)}</small>
+                    {:else}
+                      <span class="sub">none</span>
+                    {/if}
+                  </td>
+                  <td><Links links={g.referredBy} {onnavigate} /></td>
+                  <td><button type="button" disabled={!g.grid.length} onclick={() => show({ id: g.id, label: g.schedules.map(label).join(', '), grid: g.grid })}>Show on grid</button></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else if tab === 'contingencies'}
           <table data-testid="contingencies">
             <thead>
               <tr><th>Contingency</th><th>Class</th><th>Must study</th><th>Equipment</th><th>Assessed elements</th><th></th></tr>
@@ -228,8 +338,14 @@
     border: 1px solid var(--line);
   }
 
+  /* Narrower than this, a table scrolls in its box rather than squeezing its words apart. */
   table {
+    min-width: 40rem;
     font-size: 0.9rem;
+  }
+
+  .at {
+    white-space: nowrap;
   }
 
   th {
@@ -237,6 +353,7 @@
     top: 0;
     background: var(--bg);
     vertical-align: bottom;
+    white-space: nowrap;
   }
 
   td {
@@ -258,5 +375,27 @@
 
   .same small {
     color: var(--warn);
+  }
+
+  .dated {
+    color: var(--violation);
+  }
+
+  .exclusive {
+    margin: 0.5rem 0;
+    padding: 0.4rem 0.6rem;
+    border-left: 4px solid var(--line);
+    background: var(--panel);
+  }
+
+  .exclusive.clash {
+    border-left-color: var(--warn);
+  }
+
+  .exclusive button {
+    min-height: 2rem;
+    margin-left: 0.25rem;
+    padding: 0 0.6rem;
+    font: inherit;
   }
 </style>

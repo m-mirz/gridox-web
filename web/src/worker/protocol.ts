@@ -187,6 +187,44 @@ export interface RemedialAction {
   grid: Reveal[];
 }
 
+/** A value an object writes of its own: `time` when it is a date and time. */
+export interface Written {
+  key: string;
+  value: string;
+  time: boolean;
+}
+
+/** A schedule, with what holds between its time points (`previous`, `next`, `linear`, `zero`, `none`). */
+export interface Schedule extends Linked {
+  interpolation: string | null;
+  values: Written[];
+  /** The schedules of its group it refers to, by field. */
+  links: Linked[];
+  points: { id: string; atTime: string | null; values: Written[] }[];
+}
+
+/** Schedules that refer to one another, with what they refer to and what refers to them. */
+export interface ScheduleGroup {
+  id: string;
+  schedules: Schedule[];
+  about: Linked[];
+  referredBy: Linked[];
+  grid: Reveal[];
+}
+
+/** Remedial actions depending exclusively on one another, and when more than one is active. */
+export interface ExclusiveActions {
+  group: Linked;
+  /** Each with the schedules giving its activation. */
+  actions: (Linked & { schedules: string[] })[];
+  together: { at: string; actions: string[] }[];
+}
+
+export interface Schedules {
+  groups: ScheduleGroup[];
+  exclusive: ExclusiveActions[];
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -217,7 +255,8 @@ export type Request =
   | { kind: 'datasets' }
   | { kind: 'contingencies' }
   | { kind: 'assessedElements' }
-  | { kind: 'remedialActions' };
+  | { kind: 'remedialActions' }
+  | { kind: 'schedules' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -236,6 +275,7 @@ export interface Answers {
   contingencies: Contingency[];
   assessedElements: AssessedElement[];
   remedialActions: RemedialAction[];
+  schedules: Schedules;
 }
 
 export type Envelope = { id: number; request: Request };
