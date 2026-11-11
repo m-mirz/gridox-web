@@ -2,7 +2,7 @@
 
 mod session;
 
-pub use session::{Checks, ClassCount, FileOutcome, Session, Summary};
+pub use session::{Checks, ClassCount, FileOutcome, PowerFlowOptions, Session, Summary};
 
 use wasm_bindgen::prelude::*;
 
@@ -89,6 +89,15 @@ impl JsSession {
     #[wasm_bindgen(js_name = assessedElements)]
     pub fn assessed_elements(&mut self) -> String {
         self.0.assessed_elements().to_string()
+    }
+
+    /// A power flow, the imbalance taken by `sharing` (`reference`, `capability` or `equal`), with
+    /// reactive limits held if `q_limits`.
+    #[wasm_bindgen(js_name = powerFlow)]
+    pub fn power_flow(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+        let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
+        let options = PowerFlowOptions { sharing, q_limits };
+        Ok(self.0.power_flow(options).to_string())
     }
 
     pub fn schedules(&mut self) -> String {

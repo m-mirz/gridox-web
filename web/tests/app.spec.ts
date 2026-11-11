@@ -11,6 +11,7 @@ const SECOND = fixture('second_EQ.xml');
 const NC = fixture('nc_CO_AE.xml');
 const RA = fixture('nc_RA.xml');
 const RAS = fixture('nc_RAS.xml');
+const STATE = fixture('grid_state.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -455,6 +456,53 @@ test.describe('network codes', () => {
   test('filters by name', async ({ page }) => {
     await page.getByLabel('Filter the table').fill('nothing like it');
     await expect(page.getByTestId('contingencies').getByRole('row')).toHaveCount(1);
+  });
+});
+
+test.describe('power flow', () => {
+  test('solves, says what it solved, and how far from the SV', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE]);
+    const pf = page.getByTestId('power-flow');
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
+    await expect(page.getByTestId('pf-options')).toContainText('the imbalance taken by the angle reference, reactive limits held');
+    await expect(page.getByTestId('pf-components')).toContainText('Anvil 110');
+    await expect(page.getByTestId('pf-components')).toContainText(/10\.5\d %, 0\.27° at most, over 2 nodes/);
+    await expect(page.getByTestId('pf-violations').getByRole('row', { name: /Anvil-Birch/ })).toContainText('133.1 %');
+    // Furthest from the SV first.
+    await expect(page.getByTestId('pf-nodes').getByRole('row').nth(1)).toContainText('Birch 110');
+    await expect(page.getByTestId('pf-nodes').getByRole('row').nth(1)).toContainText(/110\.5\d/);
+  });
+
+  test('colours the grid by it, and can go back to voltage levels', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE]);
+    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('flow-legend')).toBeVisible();
+    await page.getByLabel('Colour by').selectOption('voltage');
+    await expect(page.getByTestId('flow-legend')).toBeHidden();
+    await page.getByTestId('pf-nodes').getByRole('row', { name: /Birch 110/ }).getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('the options chosen are the ones it says it used', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE]);
+    const pf = page.getByTestId('power-flow');
+    await pf.getByLabel('Imbalance taken by').selectOption('capability');
+    await pf.getByLabel('Hold reactive limits').uncheck();
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-options')).toContainText('taken by the machines, by capability');
+    await expect(page.getByTestId('pf-options')).toContainText('reactive limits not held');
+  });
+
+  test('says why nothing was solved, and a new file takes the result away', async ({ page }) => {
+    await input(page).setInputFiles(GRID);
+    const pf = page.getByTestId('power-flow');
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-error')).toContainText('Nothing was solved');
+    await input(page).setInputFiles(STATE);
+    await expect(page.getByTestId('pf-error')).toBeHidden();
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-verdict')).toBeVisible();
   });
 });
 

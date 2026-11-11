@@ -86,6 +86,8 @@ async function handle(request: Request): Promise<string> {
       return session.remedialActions();
     case 'schedules':
       return session.schedules();
+    case 'powerFlow':
+      return session.powerFlow(request.sharing, request.qLimits);
   }
 }
 

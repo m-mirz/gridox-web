@@ -14,6 +14,10 @@ use cimview::{Locations, mrid_of};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod power_flow;
+
+pub use power_flow::Options as PowerFlowOptions;
+
 /// What became of one file given to [`Session::add_file`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -1982,6 +1986,104 @@ mod tests {
         assert_eq!(dependency["kind"], "exclusive");
         assert_eq!(dependency["group"]["label"], "Breaker A either way");
         assert_eq!(dependency["with"][0]["label"], "Keep Breaker A closed");
+    }
+
+    const STATE: &str = include_str!("../../../web/tests/fixtures/grid_state.xml");
+
+    fn solvable() -> Session {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        session.add_file("grid_state.xml", STATE);
+        session
+    }
+
+    #[test]
+    fn a_power_flow_says_what_it_solved_and_how_far_from_the_sv() {
+        let flow = solvable().power_flow(PowerFlowOptions::default());
+        assert_eq!(flow["error"], Value::Null);
+        assert_eq!(
+            flow["options"],
+            json!({ "sharing": "reference", "qLimits": true })
+        );
+        let component = &flow["components"][0];
+        assert_eq!(component["status"], "converged");
+        assert_eq!(component["nodes"], 2);
+        assert_eq!(component["references"][0]["label"], "Anvil 110");
+        let birch = flow["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Birch 110")
+            .unwrap();
+        assert_eq!(birch["sv"], json!({ "kV": 100.0, "deg": -2.0 }));
+        assert!((birch["kV"].as_f64().unwrap() - 110.555).abs() < 0.01);
+        assert!((birch["dvPercent"].as_f64().unwrap() - 10.555).abs() < 0.01);
+        assert_eq!(birch["at"], "_00000000-0000-4000-8000-000000000a02");
+        assert_eq!(component["sv"]["dvPercent"], birch["dvPercent"]);
+    }
+
+    #[test]
+    fn a_power_flow_puts_voltages_and_loadings_where_the_grid_draws_them() {
+        let flow = solvable().power_flow(PowerFlowOptions::default());
+        let overlay = &flow["overlay"];
+        assert_eq!(
+            overlay["nodes"]["_00000000-0000-4000-8000-000000000a02"]["min"],
+            1.005
+        );
+        // A connectivity node has its topological node's voltage.
+        assert_eq!(
+            overlay["voltages"]["_00000000-0000-4000-8000-000000000a23"],
+            overlay["voltages"]["_00000000-0000-4000-8000-000000000601"]
+        );
+        let line = &overlay["flows"][LINE];
+        assert!((line["loading"].as_f64().unwrap() - 133.14).abs() < 0.1);
+        assert_eq!(line["ends"][1]["p"], -50.0);
+        let violation = &flow["violations"][0];
+        assert_eq!(violation["equipment"]["label"], "Anvil-Birch");
+        assert_eq!(violation["kind"], "PATL");
+        assert_eq!(violation["limitAmps"], 200.0);
+    }
+
+    #[test]
+    fn a_node_with_no_angle_reference_is_counted_and_not_solved() {
+        let mut session = solvable();
+        session.add_file(
+            "lone.xml",
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:TopologicalNode rdf:ID="_00000000-0000-4000-8000-000000000631">
+    <cim:IdentifiedObject.name>Lone</cim:IdentifiedObject.name>
+    <cim:TopologicalNode.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+  </cim:TopologicalNode>
+</rdf:RDF>"##,
+        );
+        let flow = session.power_flow(PowerFlowOptions::default());
+        let statuses: Vec<&str> = flow["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["status"].as_str().unwrap())
+            .collect();
+        assert!(statuses.contains(&"converged"), "{statuses:?}");
+        assert!(statuses.contains(&"noReference"), "{statuses:?}");
+        let lone = flow["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Lone")
+            .unwrap();
+        assert_eq!(lone["pu"], Value::Null);
+    }
+
+    #[test]
+    fn a_model_without_its_state_says_why_nothing_was_solved() {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        let flow = session.power_flow(PowerFlowOptions::default());
+        assert!(
+            flow["error"].as_str().is_some_and(|e| !e.is_empty()),
+            "{flow}"
+        );
     }
 
     const RAS: &str = include_str!("../../../web/tests/fixtures/nc_RAS.xml");

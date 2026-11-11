@@ -225,6 +225,59 @@ export interface Schedules {
   exclusive: ExclusiveActions[];
 }
 
+export type Sharing = 'reference' | 'capability' | 'equal';
+
+/** A connected component's outcome: solved, stopped short, or left unsolved as it has no angle reference or several. */
+export type ComponentStatus = 'converged' | 'maxIterations' | 'singular' | 'noReference' | 'ambiguousReference';
+
+/** A power flow of the model, by gridoxide, as its security analysis solves a base case. */
+export interface PowerFlow {
+  options: { sharing: Sharing; qLimits: boolean };
+  /** Why nothing was solved, such as a model without a topology. */
+  error: string | null;
+  components: {
+    status: ComponentStatus;
+    /** Topological nodes in it. */
+    nodes: number;
+    references: Linked[];
+    maxMismatch: number | null;
+    /** How far from the voltages the model's SV publishes, the angles aligned at its reference. */
+    sv: { dvPercent: number; dDeg: number; nodes: number } | null;
+  }[];
+  nodes: {
+    id: string;
+    label: string | null;
+    component: number | null;
+    nominalKV: number;
+    /** Absent where its component was not solved. */
+    pu: number | null;
+    kV: number | null;
+    deg: number | null;
+    sv: { kV: number; deg: number } | null;
+    dvPercent?: number;
+    dDeg?: number;
+    /** The grid node it is drawn in. */
+    at: string | null;
+  }[];
+  /** Nodes whose machines reactive limits took off voltage control. */
+  switched: Linked[];
+  /** What the machines' share of the imbalance came to; `null` when the reference took it. */
+  sharedMW: number | null;
+  pastLimits: (Linked & { mw: number; limit: number })[];
+  violations: { terminal: string; equipment: Linked | null; limit: Linked; kind: string; amps: number; limitAmps: number; percent: number }[];
+  overlay: FlowOverlay;
+}
+
+/** A power flow, by what the grid draws. */
+export interface FlowOverlay {
+  /** Each grid node's lowest and highest voltage, p.u. */
+  nodes: Record<string, { min: number; max: number }>;
+  /** By topological and connectivity node. */
+  voltages: Record<string, { pu: number; kV: number; deg: number }>;
+  /** By equipment: each terminal's flow, `p` and `q` into it (MW, Mvar), and the highest loading against a PATL, %. */
+  flows: Record<string, { ends: { terminal: string; p: number; q: number; amps: number; loading: number | null }[]; loading: number | null }>;
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -256,7 +309,8 @@ export type Request =
   | { kind: 'contingencies' }
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
-  | { kind: 'schedules' };
+  | { kind: 'schedules' }
+  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -276,6 +330,7 @@ export interface Answers {
   assessedElements: AssessedElement[];
   remedialActions: RemedialAction[];
   schedules: Schedules;
+  powerFlow: PowerFlow;
 }
 
 export type Envelope = { id: number; request: Request };

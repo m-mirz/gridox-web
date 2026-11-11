@@ -6,9 +6,10 @@
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
   import NetworkCodesView from './views/NetworkCodesView.svelte';
+  import PowerFlowView from './views/PowerFlowView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
-  import type { Checks, FindingsSummary, Summary } from './worker/protocol';
+  import type { Checks, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
   import ModelWorker from './worker/worker?worker';
 
   const client = new WorkerClient(() => new ModelWorker());
@@ -74,6 +75,8 @@
   const CHECKS = 'gridox.checks';
   let checks = $state<Checks>(storedChecks());
   let browse = $state<Browse>();
+  /** The last power flow, until the model changes. */
+  let flow = $state.raw<PowerFlow | null>(null);
 
   /** The checks chosen last time, in this browser. */
   function storedChecks(): Checks {
@@ -192,7 +195,8 @@
       <FindingsView {client} {findings} {checking} {checks} onchecks={changeChecks} onnavigate={(id) => browse?.navigate(id)} />
       <DatasetsView {client} {findingsVersion} onnavigate={(id) => browse?.navigate(id)} />
       <NetworkCodesView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
-      <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} />
+      <PowerFlowView {client} {version} onresult={(f) => (flow = f)} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
+      <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} flow={flow?.overlay ?? null} />
     {/if}
   {/if}
 </main>

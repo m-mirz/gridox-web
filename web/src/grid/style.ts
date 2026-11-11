@@ -10,6 +10,35 @@ function colour(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
+/** How a power flow colours the scene: by `pf`, which only a power flow sets. */
+function flowBands() {
+  const pf: Record<string, string> = {
+    ok: colour("--accent", "#4ade80"),
+    warn: colour("--warning", "#cca700"),
+    bad: colour("--violation", "#f14c4c"),
+  };
+  const fill = colour("--muted", "#8b8b8b");
+  return [
+    ...Object.entries(pf).flatMap(([band, c]) => [
+      { selector: `node[kind != "symbol"][kind != "group"][pf = "${band}"]`, style: { "background-color": c } },
+      {
+        selector: `node[kind = "symbol"][pf = "${band}"]`,
+        style: { "underlay-color": c, "underlay-opacity": 0.45, "underlay-padding": 4, "underlay-shape": "ellipse" },
+      },
+      { selector: `edge[pf = "${band}"]`, style: { "line-color": c, "underlay-opacity": 0 } },
+    ]),
+    { selector: '[pf = "none"], [pf = "unknown"]', style: { "background-color": fill, "line-color": fill, "underlay-opacity": 0 } },
+    { selector: '[pf = "none"]', style: { opacity: 0.5 } },
+    {
+      selector: "edge[flowLabel]",
+      style: {
+        label: "data(flowLabel)", "font-size": 7, color: colour("--fg", "#cccccc"), "text-rotation": "autorotate",
+        "text-outline-color": colour("--bg", "#1e1e1e"), "text-outline-width": 2, "min-zoomed-font-size": 6,
+      },
+    },
+  ];
+}
+
 export function stylesheet(): cytoscape.StylesheetJson {
   const sev = {
     violation: colour("--violation", "#f14c4c"),
@@ -39,7 +68,7 @@ export function stylesheet(): cytoscape.StylesheetJson {
         // Legible over the lines it sits on.
         "text-outline-color": bg, "text-outline-width": 2, "text-outline-opacity": 0.85,
         width: "data(size)", height: "data(size)", "background-color": fill, "border-width": "data(ring)",
-        "min-zoomed-font-size": 7,
+        "min-zoomed-font-size": 7, "text-wrap": "wrap",
       },
     },
     ...byBand('node[kind = "substation"]', "background-color"),
@@ -97,6 +126,8 @@ export function stylesheet(): cytoscape.StylesheetJson {
     { selector: 'node[kind = "group"]:selected', style: { "background-opacity": 0.15 } },
     { selector: 'node[kind = "symbol"]:selected', style: { "background-opacity": 0.3 } },
     { selector: "edge:selected", style: { "line-color": focus, opacity: 1 } },
+    // A power flow, when the grid is coloured by it: voltages on nodes, loadings on lines and equipment.
+    ...flowBands(),
     // Faded, findings' halos too, which do not take the element's opacity.
     { selector: ".dim", style: { opacity: 0.15, "underlay-opacity": 0 } },
   ] as cytoscape.StylesheetJson;

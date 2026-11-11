@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
   import type { Reveal } from '../grid/model';
-  import type { TreeEntry } from '../worker/protocol';
+  import type { FlowOverlay, TreeEntry } from '../worker/protocol';
   import Details, { type Info } from './Details.svelte';
   import GridView from './GridView.svelte';
   import TreeView from './TreeView.svelte';
@@ -11,7 +11,8 @@
     version,
     findingsVersion,
     validated,
-  }: { client: WorkerClient; version: number; findingsVersion: number; validated: boolean } = $props();
+    flow = null,
+  }: { client: WorkerClient; version: number; findingsVersion: number; validated: boolean; flow?: FlowOverlay | null } = $props();
 
   let tree = $state<TreeView>();
   let gridView = $state<GridView>();
@@ -77,7 +78,7 @@
 
 <div class="browse">
   <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
-  <GridView bind:this={gridView} {client} {version} {findingsVersion} {validated} onselect={selectedOnGrid} />
+  <GridView bind:this={gridView} {client} {version} {findingsVersion} {validated} {flow} onselect={selectedOnGrid} />
   <Details {client} {id} {info} {findingsVersion} onnavigate={(to) => navigate(to)} onback={history.length ? back : null} />
 </div>
 
