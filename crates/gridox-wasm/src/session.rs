@@ -14,6 +14,7 @@ use cimview::{Locations, mrid_of};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod actions;
 mod edit;
 mod power_flow;
 mod security;
@@ -955,37 +956,6 @@ impl Session {
                             })
                         })
                         .collect();
-                    if alteration.local_name() == "TopologyAction"
-                        && let Some(switch) =
-                            alteration.get_ref("TopologyAction.Switch").map(mrid_of)
-                    {
-                        let absolute: Vec<f64> = ranges
-                            .iter()
-                            .filter(|r| {
-                                Self::text(r, "StaticPropertyRange.PropertyReference").as_deref()
-                                    == Some("Switch.open")
-                            })
-                            .filter(|r| {
-                                Self::text(r, "RangeConstraint.valueKind").as_deref()
-                                    == Some("absolute")
-                            })
-                            .filter_map(|r| r.get_f64("RangeConstraint.normalValue"))
-                            .collect();
-                        let after = absolute.last().map(|v| *v != 0.0);
-                        let now = self
-                            .dataset
-                            .entries
-                            .get(switch)
-                            .and_then(|s| s.get_str("Switch.open"));
-                        let mut cell = self.linked(switch);
-                        cell["open"] = json!(now);
-                        cell["openAfter"] = json!(after);
-                        cell["changes"] = json!(match (now, after) {
-                            (Some(now), Some(after)) => Some((now == "true") != after),
-                            _ => None,
-                        });
-                        applied.push(cell);
-                    }
                     alterations.push(json!({
                         "id": alteration_id, "class": alteration.local_name(),
                         "label": alteration.get_str("IdentifiedObject.name"),
@@ -1013,8 +983,24 @@ impl Session {
                         })
                     })
                     .collect();
+                // What applying it changes: the switches it sets, as a column of their own.
+                let changes = self.action_changes(id);
+                for c in changes.iter().filter(|c| c.property == "Switch.open") {
+                    let now = c.before.as_deref();
+                    let after = c.after.as_deref().map(|a| a == "true");
+                    let mut cell = self.linked(&c.target);
+                    cell["open"] = json!(now);
+                    cell["openAfter"] = json!(after);
+                    cell["changes"] = json!(match (now, after) {
+                        (Some(now), Some(after)) => Some((now == "true") != after),
+                        _ => None,
+                    });
+                    applied.push(cell);
+                }
+                let changes: Vec<Value> = changes.iter().map(|c| c.to_json(self)).collect();
                 rows.push(json!({
                     "id": id, "label": element.get_str("IdentifiedObject.name"), "class": class,
+                    "changes": changes,
                     "kind": Self::text(element, "RemedialAction.kind"),
                     "available": Self::text(element, "RemedialAction.normalAvailable"),
                     "alterations": alterations, "dependencies": dependencies, "applied": applied,
@@ -2124,6 +2110,75 @@ mod tests {
         assert!(
             session.power_flow_applied(PowerFlowOptions::default(), "_nothing")["error"]
                 .is_string()
+        );
+    }
+
+    const SCHEDULE: &str = include_str!("../../../web/tests/fixtures/nc_RA_schedule.xml");
+
+    #[test]
+    fn an_intensity_schedule_at_the_scenario_time_gives_an_alteration_its_value() {
+        let mut session = solvable();
+        session.add_file("nc_RA.xml", RA);
+        let rows = session.remedial_actions();
+        let closed = |rows: &Value| {
+            rows.as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["label"] == "Keep Breaker A closed")
+                .unwrap()
+                .clone()
+        };
+        // From its range: 0.0, closed.
+        let change = &closed(&rows)["changes"][0];
+        assert_eq!(
+            (change["source"].clone(), change["after"].clone()),
+            (json!("range"), json!("false"))
+        );
+        // From its schedule, at 12:00 the value of 10:00 on: open.
+        session.add_file("nc_RA_schedule.xml", SCHEDULE);
+        let row = closed(&session.remedial_actions());
+        let change = &row["changes"][0];
+        assert_eq!(
+            (
+                change["source"].clone(),
+                change["after"].clone(),
+                change["property"].clone()
+            ),
+            (json!("schedule"), json!("true"), json!("Switch.open"))
+        );
+        assert_eq!(row["applied"][0]["openAfter"], true);
+        let applied =
+            session.power_flow_applied(PowerFlowOptions::default(), row["id"].as_str().unwrap());
+        assert_eq!(applied["compared"]["violationsAfter"], 0);
+        assert_eq!(applied["actionChanges"][0]["source"], "schedule");
+    }
+
+    #[test]
+    fn a_schedule_with_no_value_at_the_scenario_time_is_said_so_and_changes_nothing() {
+        let mut session = solvable();
+        session.add_file("nc_RA.xml", RA);
+        // Its one point after the scenario time, read as previous: nothing at 12:00.
+        session.add_file(
+            "late.xml",
+            &SCHEDULE.replace("2026-01-01T10:00:00Z", "2026-01-01T13:00:00Z"),
+        );
+        let rows = session.remedial_actions();
+        let row = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["label"] == "Keep Breaker A closed")
+            .unwrap();
+        assert_eq!(row["changes"][0]["after"], Value::Null);
+        assert_eq!(
+            row["changes"][0]["note"],
+            "no time point of its intensity schedules applies at the scenario time"
+        );
+        let applied =
+            session.power_flow_applied(PowerFlowOptions::default(), row["id"].as_str().unwrap());
+        assert!(
+            applied["error"].as_str().unwrap().contains("no time point"),
+            "{applied}"
         );
     }
 

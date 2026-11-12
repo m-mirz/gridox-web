@@ -256,6 +256,12 @@
                         <small>{applying(s)}</small>
                       </div>
                     {/each}
+                    {#each row.changes.filter((c) => c.property !== 'Switch.open' || c.after === null) as c, i (i)}
+                      <div class="part" class:same={c.after === null}>
+                        <Links links={[c.target]} {onnavigate} />
+                        <small>{c.property}: {c.after === null ? c.note : `${c.before ?? '–'} → ${c.after}`}{c.source === 'schedule' ? ' (schedule)' : ''}</small>
+                      </div>
+                    {/each}
                   </td>
                   <td><button type="button" disabled={!row.grid.length} onclick={() => show(row)}>Show on grid</button></td>
                 </tr>
@@ -290,7 +296,7 @@
           </table>
         {/if}
       </div>
-      <p class="sub">{count(shown, 'row')} shown.{#if tab === 'actions'}{' '}Applied: the switch states its topology actions set, where a range gives <code>Switch.open</code> an absolute value; nothing is solved.{/if}</p>
+      <p class="sub">{count(shown, 'row')} shown.{#if tab === 'actions'}{' '}Applied: what each alteration sets, from its intensity schedule at the scenario time, else its range; nothing is solved here.{/if}</p>
     </details>
   </section>
 {/if}

@@ -333,20 +333,6 @@ impl Session {
         })
     }
 
-    /// The switch states the remedial action `action` sets: (switch, open after), as its row of
-    /// [`Session::remedial_actions`] gives them.
-    fn applied_states(&mut self, action: &str) -> Option<Vec<(String, bool)>> {
-        let rows = self.remedial_actions();
-        let row = rows.as_array()?.iter().find(|r| r["id"] == action)?.clone();
-        Some(
-            row["applied"]
-                .as_array()?
-                .iter()
-                .filter_map(|s| Some((s["id"].as_str()?.to_string(), s["openAfter"].as_bool()?)))
-                .collect(),
-        )
-    }
-
     /// The power flow with the remedial action `action` applied, from the switches: the loaded
     /// files decoded again with the switch states the action sets, as a later SSH would set them,
     /// beside the same power flow without it. The files are not changed.
@@ -355,26 +341,16 @@ impl Session {
             switches: true,
             ..options
         };
-        let Some(states) = self.applied_states(action) else {
+        if !self.dataset.entries.contains_key(action) {
             return json!({ "error": format!("`{action}` is no remedial action of these files") });
-        };
-        if states.is_empty() {
-            return json!({ "error": "the action sets no switch: it has no topology action with a state for Switch.open" });
+        }
+        let edits = self.action_changes(action);
+        if !edits.iter().any(|c| c.after.is_some()) {
+            let why: Vec<String> = edits.iter().filter_map(|c| c.note.clone()).collect();
+            return json!({ "error": if why.is_empty() { "the action changes nothing: it has no alteration with a value".to_string() } else { format!("the action changes nothing: {}", why.join("; ")) } });
         }
         let before = self.power_flow(options);
-        // The action's states, as an SSH of their own, after the files.
-        let mut ssh = String::from(
-            r#"<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">"#,
-        );
-        for (switch, open) in &states {
-            let class = self
-                .dataset
-                .entries
-                .get(switch.as_str())
-                .map_or("Switch", |e| e.local_name());
-            ssh.push_str(&format!(r##"<cim:{class} rdf:about="#{switch}"><cim:Switch.open>{open}</cim:Switch.open></cim:{class}>"##));
-        }
-        ssh.push_str("</rdf:RDF>");
+        let ssh = Self::changes_as_ssh(&edits);
         let mut applied = cimmodel::CimDataset::default();
         for (_, text) in &self.texts.files {
             if let Ok(found) = cimmodel::CimDataset::decode_str(text) {
@@ -419,21 +395,18 @@ impl Session {
         };
         after["action"] = self.linked(action);
         after["actionSwitches"] = Value::Array(
-            states
+            edits
                 .iter()
-                .map(|(s, open)| {
-                    let mut cell = self.linked(s);
-                    cell["open"] = json!(
-                        self.dataset
-                            .entries
-                            .get(s.as_str())
-                            .and_then(|e| e.get_str("Switch.open"))
-                    );
-                    cell["openAfter"] = json!(open);
+                .filter(|c| c.property == "Switch.open" && c.after.is_some())
+                .map(|c| {
+                    let mut cell = self.linked(&c.target);
+                    cell["open"] = json!(c.before);
+                    cell["openAfter"] = json!(c.after.as_deref() == Some("true"));
                     cell
                 })
                 .collect(),
         );
+        after["actionChanges"] = Value::Array(edits.iter().map(|c| c.to_json(self)).collect());
         after["compared"] = json!({
             "violationsBefore": before["violations"].as_array().map_or(0, Vec::len),
             "violationsAfter": after["violations"].as_array().map_or(0, Vec::len),

@@ -161,6 +161,17 @@ export interface AssessedElement {
   grid: Reveal[];
 }
 
+/** One property an alteration changes: its value from a range or an intensity schedule at the scenario time. */
+export interface ActionChange {
+  alteration: Linked;
+  target: Linked;
+  property: string;
+  before: string | null;
+  after: string | null;
+  source: 'range' | 'schedule';
+  note: string | null;
+}
+
 /** What applying a remedial action does to a switch: `open` as the model has it, `openAfter` as applied. */
 export interface SwitchState extends Linked {
   open: string | null;
@@ -184,6 +195,8 @@ export interface RemedialAction {
   }[];
   dependencies: { id: string; kind: string | null; group: Linked | null; with: Linked[] }[];
   applied: SwitchState[];
+  /** What applying it changes, alteration by alteration; `after` null where it cannot say, and `note` why. */
+  changes: ActionChange[];
   grid: Reveal[];
 }
 
@@ -270,6 +283,7 @@ export interface PowerFlow {
   /** A remedial action applied: the action, the switch states it set, and what that changed. */
   action?: Linked;
   actionSwitches?: (Linked & { open: string | null; openAfter: boolean })[];
+  actionChanges?: ActionChange[];
   compared?: {
     violationsBefore: number;
     violationsAfter: number;

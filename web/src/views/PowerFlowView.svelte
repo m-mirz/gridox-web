@@ -47,7 +47,7 @@
     let live = true;
     // The actions that set a switch: those a solve from the switches can apply.
     client.request<'remedialActions'>({ kind: 'remedialActions' }).then((found) => {
-      if (live) actions = found.filter((a) => a.applied.length).map((a) => ({ id: a.id, label: a.label, class: a.class }));
+      if (live) actions = found.filter((a) => a.changes.some((c) => c.after !== null)).map((a) => ({ id: a.id, label: a.label, class: a.class }));
     });
     return () => {
       live = false;
@@ -184,6 +184,9 @@
             {c.solvedBefore === c.solvedAfter ? `${count(c.solvedAfter, 'node')} solved, as without it.` : `${count(c.solvedAfter, 'node')} solved, ${c.solvedBefore.toLocaleString('en')} without it.`}
             Currents past their limits: {c.violationsAfter.toLocaleString('en')}, {c.violationsBefore.toLocaleString('en')} without it.
           </p>
+          {#each (flow.actionChanges ?? []).filter((x) => x.property !== 'Switch.open' || x.after === null) as x, i (i)}
+            <p class="sub"><Links inline links={[x.target]} {onnavigate} /> {x.property}: {x.after === null ? `not applied, ${x.note}` : `${x.before ?? '–'} → ${x.after}`}</p>
+          {/each}
           {#if c.most.length}
             <p class="sub">Most changed: {#each c.most as m, i (m.id)}<Links inline links={[m]} {onnavigate} /> {fixed(m.change, 4)}{i < c.most.length - 1 ? ', ' : '.'}{/each}</p>
           {/if}

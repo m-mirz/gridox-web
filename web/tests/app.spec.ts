@@ -15,6 +15,7 @@ const RAS = fixture('nc_RAS.xml');
 const STATE = fixture('grid_state.xml');
 const SV = fixture('grid_SV.xml');
 const MORE = fixture('nc_CO_more.xml');
+const SCHEDULE = fixture('nc_RA_schedule.xml');
 const input = (page: Page) => page.getByLabel('Choose files');
 const folderInput = (page: Page) => page.getByLabel('Choose a folder');
 
@@ -524,6 +525,17 @@ test.describe('power flow', () => {
     await pf.getByLabel('Remedial action applied').selectOption({ label: 'Keep Breaker A closed' });
     await pf.getByRole('button', { name: 'Solve again' }).click();
     await expect(applied).toContainText('No voltage changes');
+  });
+
+  test('an action takes its value from an intensity schedule at the scenario time', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV, RA, SCHEDULE]);
+    await page.getByRole('tab', { name: /Remedial actions [1-9]/ }).click();
+    const row = page.getByTestId('remedial-actions').getByRole('row', { name: /^Keep Breaker A closed/ });
+    await expect(row.getByTestId('applied')).toContainText('closed → open');
+    const pf = page.getByTestId('power-flow');
+    await pf.getByLabel('Remedial action applied').selectOption({ label: 'Keep Breaker A closed' });
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-applied')).toContainText('Breaker A closed → open.');
   });
 
   test('says why nothing was solved, and a new file takes the result away', async ({ page }) => {
