@@ -14,3 +14,7 @@ repository = "https://github.com/m-mirz/gridox-web"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Until gridoxide releases curative actions (gridoxide PR #36): its branch.
+[patch.crates-io]
+gridoxide = { git = "https://github.com/m-mirz/gridoxide", branch = "curative-actions" }
