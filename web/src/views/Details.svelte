@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
-  import type { ObjectFields } from '../worker/protocol';
+  import type { EditResult, ObjectFields } from '../worker/protocol';
+  import ObjectEditor from './ObjectEditor.svelte';
 
   /** What a view says of what is selected in it. */
   export interface Info {
@@ -18,6 +19,7 @@
     findingsVersion,
     onnavigate,
     onback,
+    onedited,
   }: {
     client: WorkerClient;
     id: string | null;
@@ -27,10 +29,14 @@
     onnavigate: (id: string) => void;
     /** Back to the object shown before, if there was one. */
     onback: (() => void) | null;
+    /** After an edit of the files: what it did, and the object to show then. */
+    onedited: (result: EditResult, show: string | null) => void;
   } = $props();
 
   let object = $state.raw<ObjectFields | null>(null);
   let descriptions = $state(false);
+  /** Whether the editor is open, from one object to the next. */
+  let editing = $state(false);
 
   $effect(() => {
     void findingsVersion;
@@ -151,6 +157,12 @@
         </dd>
       {/each}
     </dl>
+  {/if}
+
+  {#if object && !object.missing && !object.foreign}
+    {#key object.id}
+      <ObjectEditor {client} {object} {onedited} bind:open={editing} />
+    {/key}
   {/if}
 
   {#if object?.referrers.total}

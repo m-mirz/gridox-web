@@ -412,7 +412,7 @@ test.describe('network codes', () => {
 
   test('a remedial action says what it changes, and what applying it gives', async ({ page }) => {
     await input(page).setInputFiles(RA);
-    await page.getByRole('tab', { name: /Remedial actions/ }).click();
+    await page.getByRole('tab', { name: /Remedial actions [1-9]/ }).click();
     const table = page.getByTestId('remedial-actions');
     const open = table.getByRole('row', { name: /^Open Breaker A/ });
     await expect(open).toContainText('Switch.open = 1.0 (absolute)');
@@ -426,7 +426,8 @@ test.describe('network codes', () => {
 
   test('schedules are drawn on one time axis, and exclusive actions active together are marked', async ({ page }) => {
     await input(page).setInputFiles([RA, RAS]);
-    await page.getByRole('tab', { name: /Schedules/ }).click();
+    // Once the tables have the files' schedules.
+    await page.getByRole('tab', { name: /Schedules [1-9]/ }).click();
     const exclusive = page.getByTestId('exclusive');
     await expect(exclusive).toContainText('Breaker A either way');
     await expect(exclusive).toContainText('one time more than one is active: 2024-11-20T12:00:00Z');
@@ -443,7 +444,8 @@ test.describe('network codes', () => {
 
   test('a cancelled schedule says when, and that it has no time points', async ({ page }) => {
     await input(page).setInputFiles([RA, RAS]);
-    await page.getByRole('tab', { name: /Schedules/ }).click();
+    // Once the tables have the files' schedules.
+    await page.getByRole('tab', { name: /Schedules [1-9]/ }).click();
     const row = page.getByTestId('schedules').getByRole('row', { name: /Maintenance of Breaker A/ });
     await expect(row).toContainText('cancelledDateTime = 2024-11-19T08:34:00Z');
     await expect(row).toContainText('none');
@@ -592,6 +594,88 @@ ${many}
     await input(page).setInputFiles([GRID, STATE, SV]);
     await expect(page.getByTestId('power-flow')).toBeVisible();
     await expect(page.getByTestId('security')).toBeHidden();
+  });
+});
+
+test.describe('editing', () => {
+  const details = (page: Page) => page.getByTestId('details');
+  const open = async (page: Page, name: RegExp, hit = name) => {
+    await page.getByTestId('tree').getByRole('searchbox').fill(name.source.replace(/[\^$]/g, '').toLowerCase());
+    await page.getByTestId('hits').getByRole('button', { name: hit }).click();
+    await expect(details(page).getByRole('heading', { name })).toBeVisible();
+    const edit = details(page).getByTestId('edit');
+    await edit.getByText('Edit', { exact: true }).click();
+    return edit;
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV]);
+    await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('a value set changes the files and the model, is validated, and can be undone', async ({ page }) => {
+    const edit = await open(page, /^Load B/);
+    await edit.getByLabel('Value of EnergyConsumer.p').fill('80');
+    await edit.locator('.row', { hasText: 'EnergyConsumer.p' }).getByRole('button', { name: 'Set' }).click();
+    const bar = page.getByTestId('edited-files');
+    await expect(bar).toContainText('1 file edited');
+    await expect(bar).not.toContainText('validating', { timeout: 30_000 });
+    await expect(details(page).getByTestId('fields')).toContainText('80');
+    // The power flow solves the model as edited.
+    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-violations')).toContainText(/2\d\d\.\d %/);
+    const [download] = await Promise.all([page.waitForEvent('download'), bar.getByRole('button', { name: 'Download grid_state.xml' }).click()]);
+    expect(readFileSync(await download.path(), 'utf8')).toContain('<cim:EnergyConsumer.p>80</cim:EnergyConsumer.p>');
+    await bar.getByRole('button', { name: 'Undo' }).click();
+    await expect(bar).toBeHidden();
+    await expect(details(page).getByTestId('fields')).toContainText('50');
+  });
+
+  test('an edit is kept in the browser with the files, and comes back after a reload', async ({ page }) => {
+    test.skip(!(await page.getByTestId('kept').isVisible()), 'this browser keeps no files');
+    const edit = await open(page, /^Load B/);
+    await edit.getByLabel('Value of EnergyConsumer.p').fill('80');
+    await edit.locator('.row', { hasText: 'EnergyConsumer.p' }).getByRole('button', { name: 'Set' }).click();
+    await expect(page.getByTestId('edited-files')).toContainText('1 file edited');
+    await page.reload();
+    await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('tree').getByRole('searchbox').fill('load b');
+    await page.getByTestId('hits').getByRole('button', { name: /^Load B/ }).click();
+    await expect(details(page).getByTestId('fields')).toContainText('80');
+  });
+
+  test('a field is added, and removed', async ({ page }) => {
+    const edit = await open(page, /^Load B/);
+    await edit.getByLabel('Field to add').selectOption('IdentifiedObject.description');
+    await edit.getByLabel('Value of IdentifiedObject.description').fill('the mill');
+    await edit.getByRole('button', { name: 'Add field' }).click();
+    await expect(details(page).getByTestId('fields')).toContainText('the mill');
+    // The editor stays open, and knows the field is written now.
+    await details(page).getByTestId('edit').getByRole('button', { name: 'Remove IdentifiedObject.description' }).click();
+    await expect(details(page).getByTestId('fields')).not.toContainText('the mill');
+  });
+
+  test('an mRID is renamed in every file, and the object shown under it', async ({ page }) => {
+    const edit = await open(page, /^Breaker A/);
+    await edit.getByLabel('New mRID').fill('_breaker-a');
+    await edit.getByRole('button', { name: 'Rename' }).click();
+    await expect(details(page).getByTestId('fields')).toContainText('_breaker-a');
+    await expect(page.getByTestId('edited-files')).toContainText('2 files edited');
+  });
+
+  test('an object is added in its container, and one deleted after saying what goes', async ({ page }) => {
+    let edit = await open(page, /^Anvil 110$/, /^Anvil 110 VoltageLevel/);
+    await edit.getByLabel('Class to add').selectOption('Breaker');
+    await edit.getByLabel('Name of the object to add').fill('Breaker C');
+    await edit.getByRole('button', { name: 'Add object' }).click();
+    await expect(details(page).getByRole('heading', { name: 'Breaker C' })).toBeVisible();
+    edit = details(page).getByTestId('edit');
+    await edit.getByRole('button', { name: 'Delete…' }).click();
+    await expect(edit.getByTestId('delete-preview')).toContainText('Deletes 1 object and 0 references to it, in grid_EQ.xml.');
+    await edit.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.getByTestId('edited-files')).toContainText('1 file edited');
+    await page.getByTestId('tree').getByRole('searchbox').fill('breaker c');
+    await expect(page.getByTestId('hits').getByRole('button', { name: /Breaker C/ })).toHaveCount(0);
   });
 });
 

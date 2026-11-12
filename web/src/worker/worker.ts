@@ -3,7 +3,7 @@
 
 import init, { Session } from '../wasm/gridox_wasm';
 import type { Envelope, FileOutcome, Reply, Request } from './protocol';
-import { forget, keep, kept } from './store';
+import { forget, keep, kept, replace } from './store';
 
 let session: Session;
 const ready = init().then(() => {
@@ -35,6 +35,21 @@ async function add(files: File[]): Promise<File[]> {
     if (outcomes[outcomes.length - 1].status === 'loaded') added.push(file);
   }
   return added;
+}
+
+/** After an edit: the files it changed, as they are now, in place of the ones loaded and kept. */
+async function edited(reply: string): Promise<string> {
+  const { changed } = JSON.parse(reply) as { changed: string[] };
+  const fresh: File[] = [];
+  for (const name of changed) {
+    const text = session.fileText(name);
+    const at = files.findIndex((f) => f.name === name);
+    if (text === undefined || at < 0) continue;
+    files[at] = new File([text], name, { type: 'application/rdf+xml' });
+    fresh.push(files[at]);
+  }
+  if (keeping && fresh.length) keeping = await replace(fresh);
+  return reply;
 }
 
 async function handle(request: Request): Promise<string> {
@@ -112,6 +127,37 @@ async function handle(request: Request): Promise<string> {
     case 'files':
       // Sent beside the reply, as files do not go into JSON.
       return 'null';
+    case 'summary':
+      return loaded();
+    case 'editState':
+      return session.editState();
+    case 'fileText':
+      return JSON.stringify(session.fileText(request.name) ?? null);
+    case 'editUndo':
+      return edited(session.editUndo());
+    case 'editRename':
+      return edited(session.editRename(request.old, request.new));
+    case 'editDeletePreview':
+      return session.editDeletePreview(request.id, request.contained);
+    case 'editDelete':
+      return edited(session.editDelete(request.id, request.contained));
+    case 'editAddable':
+      return session.editAddable(request.parent);
+    case 'editAdd':
+      // Its identifier: a version 4 UUID from these, drawn again while the set has it.
+      return edited(session.editAdd(request.parent, request.class, request.name ?? undefined, crypto.getRandomValues(new Uint8Array(160))));
+    case 'editSet':
+      return edited(session.editSet(request.id, request.key, request.value));
+    case 'editRemove':
+      return edited(session.editRemove(request.id, request.key));
+    case 'editForm':
+      return session.editForm(request.id);
+    case 'editCandidates':
+      return session.editCandidates(request.id, request.key);
+    case 'editFixes':
+      return session.editFixes(request.id);
+    case 'editApply':
+      return edited(session.editApply(request.revision, JSON.stringify(request.edits)));
     case 'loadOnly': {
       // Another worker's model, for a share of its work: nothing is kept for it.
       files = await add(request.files);

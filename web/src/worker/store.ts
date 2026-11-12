@@ -51,6 +51,32 @@ export async function keep(files: File[]): Promise<boolean> {
   }
 }
 
+/** `files` in place of the kept ones of their names, as an edit leaves them. Whether all are kept. */
+export async function replace(files: File[]): Promise<boolean> {
+  try {
+    const dir = await directory(false);
+    if (!dir) return false;
+    const stored = await names(dir);
+    for (const file of files) {
+      const name = stored.find((n) => n.replace(PREFIX, '') === file.name);
+      if (!name) return false;
+      const access = await (await dir.getFileHandle(name)).createSyncAccessHandle();
+      try {
+        access.truncate(0);
+        access.write(new Uint8Array(await file.arrayBuffer()), { at: 0 });
+        access.flush();
+      } finally {
+        access.close();
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn('The edited files could not be kept in this browser:', error);
+    await forget().catch(() => {});
+    return false;
+  }
+}
+
 /** What is kept, in the order it came, under the names it came with. */
 export async function kept(): Promise<File[]> {
   try {

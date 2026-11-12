@@ -6,11 +6,12 @@
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
   import NetworkCodesView from './views/NetworkCodesView.svelte';
+  import EditedFiles from './views/EditedFiles.svelte';
   import PowerFlowView from './views/PowerFlowView.svelte';
   import SecurityView from './views/SecurityView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
-  import type { Checks, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
+  import type { Checks, EditResult, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
   import ModelWorker from './worker/worker?worker';
 
   const client = new WorkerClient(() => new ModelWorker());
@@ -150,6 +151,23 @@
     }
   }
 
+  /** After an edit of the files: the model is new, validated again, and `show` shown in it. */
+  function edited(_result: EditResult, show: string | null) {
+    void enqueue(async () => {
+      ({ summary, kept } = await client.request<'summary'>({ kind: 'summary' }));
+      version += 1;
+      findings = null;
+      // The views ask the new model; the object shown once they have it.
+      if (show) setTimeout(() => void browse?.navigate(show), 0);
+      await validate();
+    });
+  }
+
+  async function undo() {
+    const result = await client.request<'editUndo'>({ kind: 'editUndo' });
+    if (!result.error) edited(result, null);
+  }
+
   onMount(() => {
     void run({ kind: 'restore' });
   });
@@ -198,7 +216,8 @@
       <NetworkCodesView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <PowerFlowView {client} {version} onresult={(f) => (flow = f)} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <SecurityView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
-      <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} flow={flow?.overlay ?? null} />
+      <EditedFiles {client} {version} {findings} {checking} onundo={undo} />
+      <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} flow={flow?.overlay ?? null} onedited={edited} />
     {/if}
   {/if}
 </main>
