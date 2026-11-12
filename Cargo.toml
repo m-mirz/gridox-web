@@ -14,10 +14,3 @@ repository = "https://github.com/m-mirz/gridox-web"
 lto = true
 codegen-units = 1
 panic = "abort"
-
-# Until cimoxide releases cimview::edit (cimoxide PR #22): the local checkout, which has the
-# generated tables a git dependency would lack.
-[patch.crates-io]
-cimoxide-model = { path = "../cimoxide/cimmodel" }
-cimoxide-validation = { path = "../cimoxide/cimvalidation" }
-cimoxide-view = { path = "../cimoxide/cimview" }

@@ -63,7 +63,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "cimoxide-model"
-version = "0.6.1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "903f72ae3c673d4eab148973cb6c359271b58fe868106e5fc4b81eed7d719055"
 dependencies = [
  "quick-xml",
  "serde",
@@ -73,14 +75,18 @@ dependencies = [
 
 [[package]]
 name = "cimoxide-validation"
-version = "0.6.1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a470ab422de1eaf81c27c2aa89171f388628e57fa6fccc528a52115b1d29eb3"
 dependencies = [
  "cimoxide-model",
 ]
 
 [[package]]
 name = "cimoxide-view"
-version = "0.6.1"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dca0cbcfe5e4fa62cd7b172d8231477279a6df43a19f6b872b942d80ed06cf41"
 dependencies = [
  "cimoxide-model",
  "cimoxide-validation",
