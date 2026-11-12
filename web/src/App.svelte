@@ -7,6 +7,7 @@
   import FindingsView from './views/FindingsView.svelte';
   import NetworkCodesView from './views/NetworkCodesView.svelte';
   import PowerFlowView from './views/PowerFlowView.svelte';
+  import SecurityView from './views/SecurityView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
   import type { Checks, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
@@ -196,6 +197,7 @@
       <DatasetsView {client} {findingsVersion} onnavigate={(id) => browse?.navigate(id)} />
       <NetworkCodesView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <PowerFlowView {client} {version} onresult={(f) => (flow = f)} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
+      <SecurityView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} flow={flow?.overlay ?? null} />
     {/if}
   {/if}

@@ -100,6 +100,63 @@ impl JsSession {
         Ok(self.0.power_flow(options).to_string())
     }
 
+    /// Readies a security analysis of the contingencies loaded; see [`Session::analysis_start`].
+    #[wasm_bindgen(js_name = analysisStart)]
+    pub fn analysis_start(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+        let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
+        Ok(self
+            .0
+            .analysis_start(PowerFlowOptions { sharing, q_limits })
+            .to_string())
+    }
+
+    #[wasm_bindgen(js_name = analysisStep)]
+    pub fn analysis_step(&mut self, count: usize) -> String {
+        self.0.analysis_step(count).to_string()
+    }
+
+    #[wasm_bindgen(js_name = analysisResult)]
+    pub fn analysis_result(&mut self) -> String {
+        self.0.analysis_result().to_string()
+    }
+
+    #[wasm_bindgen(js_name = analysisViolations)]
+    pub fn analysis_violations(
+        &self,
+        contingency: Option<String>,
+        terminal: Option<String>,
+    ) -> String {
+        self.0
+            .analysis_violations(contingency.as_deref(), terminal.as_deref())
+            .to_string()
+    }
+
+    #[wasm_bindgen(js_name = sarDefaults)]
+    pub fn sar_defaults(&self) -> String {
+        self.0.sar_defaults().to_string()
+    }
+
+    /// The finished analysis as a SAR, its header given as JSON: `title`, `description`,
+    /// `publisher`, `isVersionOf`, `rightsHolder`, `generatedAt`.
+    pub fn sar(&self, header: &str) -> Result<String, JsError> {
+        let h: serde_json::Value = serde_json::from_str(header)?;
+        let text = |key: &str| h[key].as_str().unwrap_or_default().to_string();
+        let header = gridoxide::security_analysis::SarHeader {
+            title: text("title"),
+            description: text("description"),
+            publisher: text("publisher"),
+            is_version_of: text("isVersionOf"),
+            rights_holder: text("rightsHolder"),
+            generated_at: text("generatedAt"),
+        };
+        self.0.sar(&header).map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen(js_name = sarResults)]
+    pub fn sar_results(&self) -> String {
+        self.0.sar_results().to_string()
+    }
+
     pub fn schedules(&mut self) -> String {
         self.0.schedules().to_string()
     }

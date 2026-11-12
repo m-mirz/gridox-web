@@ -12,6 +12,8 @@ const NC = fixture('nc_CO_AE.xml');
 const RA = fixture('nc_RA.xml');
 const RAS = fixture('nc_RAS.xml');
 const STATE = fixture('grid_state.xml');
+const SV = fixture('grid_SV.xml');
+const MORE = fixture('nc_CO_more.xml');
 const input = (page: Page) => page.locator('input[type=file]');
 
 test.beforeEach(async ({ page }) => {
@@ -461,7 +463,7 @@ test.describe('network codes', () => {
 
 test.describe('power flow', () => {
   test('solves, says what it solved, and how far from the SV', async ({ page }) => {
-    await input(page).setInputFiles([GRID, STATE]);
+    await input(page).setInputFiles([GRID, STATE, SV]);
     const pf = page.getByTestId('power-flow');
     await pf.getByRole('button', { name: 'Solve' }).click();
     await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
@@ -475,7 +477,7 @@ test.describe('power flow', () => {
   });
 
   test('colours the grid by it, and can go back to voltage levels', async ({ page }) => {
-    await input(page).setInputFiles([GRID, STATE]);
+    await input(page).setInputFiles([GRID, STATE, SV]);
     await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
     await expect(page.getByTestId('flow-legend')).toBeVisible();
     await page.getByLabel('Colour by').selectOption('voltage');
@@ -485,7 +487,7 @@ test.describe('power flow', () => {
   });
 
   test('the options chosen are the ones it says it used', async ({ page }) => {
-    await input(page).setInputFiles([GRID, STATE]);
+    await input(page).setInputFiles([GRID, STATE, SV]);
     const pf = page.getByTestId('power-flow');
     await pf.getByLabel('Imbalance taken by').selectOption('capability');
     await pf.getByLabel('Hold reactive limits').uncheck();
@@ -499,10 +501,73 @@ test.describe('power flow', () => {
     const pf = page.getByTestId('power-flow');
     await pf.getByRole('button', { name: 'Solve' }).click();
     await expect(page.getByTestId('pf-error')).toContainText('Nothing was solved');
-    await input(page).setInputFiles(STATE);
+    await input(page).setInputFiles([STATE, SV]);
     await expect(page.getByTestId('pf-error')).toBeHidden();
     await pf.getByRole('button', { name: 'Solve' }).click();
     await expect(page.getByTestId('pf-verdict')).toBeVisible();
+  });
+});
+
+test.describe('security analysis', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV, NC, MORE]);
+    await expect(page.getByTestId('security')).toBeVisible();
+  });
+
+  test('runs every contingency, and says what each gave', async ({ page }) => {
+    const sa = page.getByTestId('security');
+    await sa.getByRole('button', { name: 'Run 4 contingencies' }).click();
+    await expect(page.getByTestId('sa-summary')).toContainText('4 contingencies: 3 solved, 1 name equipment the model lacks.');
+    await expect(page.getByTestId('sa-summary')).toContainText('1 violation in the base case, 1 violation after contingencies.');
+    await expect(page.getByTestId('sa-options')).toContainText('the imbalance taken by the machines, by capability, reactive limits not held');
+    await expect(sa).toContainText('Naming equipment the model lacks, so not run: Loss of Unit X');
+    const nothing = page.getByTestId('sa-contingencies').getByRole('row', { name: /Nothing lost/ });
+    await expect(nothing).toContainText('133.1 %');
+    await nothing.getByRole('button', { name: 'Violations' }).click();
+    await expect(page.getByTestId('sa-contingencies')).toContainText('266 A on Anvil-Birch PATL (PATL, 200 A), 133.1 %');
+    await page.getByTestId('sa-contingencies').getByRole('row', { name: /Loss of Anvil-Birch/ }).getByRole('button', { name: 'Show on grid' }).click();
+    await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
+  });
+
+  test('lists the elements past a limit, and their violations', async ({ page }) => {
+    const sa = page.getByTestId('security');
+    await sa.getByRole('button', { name: /^Run/ }).click();
+    await sa.getByRole('tab', { name: /By element/ }).click();
+    const line = page.getByTestId('sa-elements').getByRole('row', { name: /Anvil-Birch/ });
+    await expect(line).toContainText('Nothing lost');
+    await line.getByRole('button', { name: 'Violations' }).click();
+    await expect(page.getByTestId('sa-elements')).toContainText('base case');
+    await expect(page.getByTestId('sa-elements')).toContainText('after Nothing lost');
+  });
+
+  test('downloads a SAR once its header is given, and reads one back beside its own', async ({ page }) => {
+    const sa = page.getByTestId('security');
+    await sa.getByRole('button', { name: /^Run/ }).click();
+    const form = page.getByTestId('sa-download');
+    await form.getByText('Download the SAR').click();
+    await expect(form.getByLabel(/Publisher/)).toHaveValue('https://energy.referencedata.eu/test/party/South');
+    await expect(form.getByRole('button', { name: 'Download SAR' })).toBeDisabled();
+    await form.getByLabel(/Version of/).fill('https://energy.referencedata.eu/Test/Model/South-SAR');
+    const [download] = await Promise.all([page.waitForEvent('download'), form.getByRole('button', { name: 'Download SAR' }).click()]);
+    expect(download.suggestedFilename()).toBe('20260101_SAR.xml');
+    const path = await download.path();
+    expect(readFileSync(path, 'utf8')).toContain('SecurityAnalysisResult');
+    // The SAR, loaded with its model: its results, and the analysis's own beside them.
+    const copy = join(mkdtempSync(join(tmpdir(), 'gridox-')), 'sar.xml');
+    cpSync(path, copy);
+    await input(page).setInputFiles(copy);
+    await sa.getByRole('tab', { name: /Supplied SAR/ }).click();
+    await expect(page.getByTestId('sa-supplied')).toContainText('Anvil-Birch');
+    await expect(page.getByTestId('sa-supplied')).toContainText('not run');
+  });
+
+  test('can be stopped, and a model without contingencies has no analysis', async ({ page }) => {
+    await input(page).setInputFiles(fixture('second_EQ.xml'));
+    await expect(page.getByTestId('security')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await input(page).setInputFiles([GRID, STATE, SV]);
+    await expect(page.getByTestId('power-flow')).toBeVisible();
+    await expect(page.getByTestId('security')).toBeHidden();
   });
 });
 

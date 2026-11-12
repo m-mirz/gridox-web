@@ -278,6 +278,80 @@ export interface FlowOverlay {
   flows: Record<string, { ends: { terminal: string; p: number; q: number; amps: number; loading: number | null }[]; loading: number | null }>;
 }
 
+/** How far an analysis has come; `error` ends it. */
+export interface AnalysisProgress {
+  error: string | null;
+  done?: number;
+  total: number;
+}
+
+export interface AnalysisViolation {
+  contingency: Linked | null;
+  terminal: string;
+  equipment: Linked | null;
+  limit: Linked;
+  kind: string;
+  amps: number;
+  limitAmps: number;
+  percent: number;
+}
+
+/** A security analysis, by contingency and by element. Percentages are of the limit. */
+export interface Analysis {
+  options: { sharing: Sharing; qLimits: boolean };
+  scenarioTime: string;
+  total: number;
+  solved: number;
+  /** Contingencies that did not converge: no SAR has a place for them. */
+  stalled: Linked[];
+  /** Contingencies naming equipment the model lacks. */
+  absent: Linked[];
+  baseViolations: number;
+  violations: number;
+  pastLimits: { contingency: Linked | null; machine: Linked; mw: number; limit: number }[];
+  requires: string[];
+  contingencies: (Linked & {
+    equipment: Linked[];
+    outcome: 'solved' | 'stalled' | 'absent';
+    violations: number;
+    worst: number | null;
+    grid: Reveal[];
+  })[];
+  elements: {
+    terminal: string;
+    equipment: Linked | null;
+    contingencies: number;
+    worst: number | null;
+    worstContingency: Linked | null;
+    base: number | null;
+    grid: Reveal[];
+  }[];
+}
+
+export interface SarHeader {
+  title: string;
+  description: string;
+  publisher: string;
+  isVersionOf: string;
+  rightsHolder: string;
+  generatedAt: string;
+}
+
+/** A result of a SAR loaded with the model, and the analysis's own for the same, once run. */
+export interface SarResult {
+  id: string;
+  contingency: Linked | null;
+  terminal: Linked | null;
+  equipment: Linked | null;
+  limit: Linked | null;
+  isViolation: string | null;
+  value: string | null;
+  valueA: string | null;
+  atTime: string | null;
+  ours: number | null;
+  analysed: boolean;
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -310,7 +384,14 @@ export type Request =
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
   | { kind: 'schedules' }
-  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean };
+  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean }
+  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean }
+  | { kind: 'analysisStep'; count: number }
+  | { kind: 'analysisResult' }
+  | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
+  | { kind: 'sarDefaults' }
+  | { kind: 'sar'; header: SarHeader }
+  | { kind: 'sarResults' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -331,6 +412,14 @@ export interface Answers {
   remedialActions: RemedialAction[];
   schedules: Schedules;
   powerFlow: PowerFlow;
+  analysisStart: AnalysisProgress;
+  analysisStep: AnalysisProgress;
+  analysisResult: Analysis | null;
+  analysisViolations: AnalysisViolation[];
+  sarDefaults: Partial<SarHeader> | null;
+  /** The SAR's XML. */
+  sar: string;
+  sarResults: SarResult[];
 }
 
 export type Envelope = { id: number; request: Request };

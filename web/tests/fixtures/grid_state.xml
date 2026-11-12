@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- grid_EQ.xml's state, in one file without a header: its topology (TP), the load and the
-     breaker (SSH), the published voltages with Anvil as the angle reference (SV), and a 200 A
-     PATL on the line's Birch end, which the 50 MW load takes it past. Birch's SvVoltage is
-     made up, a little off what the line gives, to compare with. -->
+<!-- grid_EQ.xml's topology (TP) and its load and breaker (SSH), in one file without a header,
+     and a 200 A PATL on the line's Birch end, which the 50 MW load takes it past. Its published
+     voltages are in grid_SV.xml. -->
 <rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <cim:TopologicalNode rdf:ID="_00000000-0000-4000-8000-000000000601">
     <cim:IdentifiedObject.name>Anvil 110</cim:IdentifiedObject.name>
@@ -64,20 +63,4 @@
     <cim:OperationalLimit.OperationalLimitType rdf:resource="#_00000000-0000-4000-8000-000000000611"/>
     <cim:CurrentLimit.normalValue>200</cim:CurrentLimit.normalValue>
   </cim:CurrentLimit>
-  <cim:TopologicalIsland rdf:ID="_00000000-0000-4000-8000-000000000621">
-    <cim:IdentifiedObject.name>South island</cim:IdentifiedObject.name>
-    <cim:TopologicalIsland.AngleRefTopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
-    <cim:TopologicalIsland.TopologicalNodes rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
-    <cim:TopologicalIsland.TopologicalNodes rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
-  </cim:TopologicalIsland>
-  <cim:SvVoltage rdf:ID="_00000000-0000-4000-8000-000000000622">
-    <cim:SvVoltage.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
-    <cim:SvVoltage.v>112</cim:SvVoltage.v>
-    <cim:SvVoltage.angle>0</cim:SvVoltage.angle>
-  </cim:SvVoltage>
-  <cim:SvVoltage rdf:ID="_00000000-0000-4000-8000-000000000623">
-    <cim:SvVoltage.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
-    <cim:SvVoltage.v>100</cim:SvVoltage.v>
-    <cim:SvVoltage.angle>-2</cim:SvVoltage.angle>
-  </cim:SvVoltage>
 </rdf:RDF>

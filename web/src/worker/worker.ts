@@ -88,6 +88,21 @@ async function handle(request: Request): Promise<string> {
       return session.schedules();
     case 'powerFlow':
       return session.powerFlow(request.sharing, request.qLimits);
+    case 'analysisStart':
+      return session.analysisStart(request.sharing, request.qLimits);
+    case 'analysisStep':
+      return session.analysisStep(request.count);
+    case 'analysisResult':
+      return session.analysisResult();
+    case 'analysisViolations':
+      return session.analysisViolations(request.contingency ?? undefined, request.terminal ?? undefined);
+    case 'sarDefaults':
+      return session.sarDefaults();
+    case 'sar':
+      // Every reply is JSON: the XML as a JSON string.
+      return JSON.stringify(session.sar(JSON.stringify(request.header)));
+    case 'sarResults':
+      return session.sarResults();
   }
 }
 
