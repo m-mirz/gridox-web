@@ -2,6 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { zip } from './zipfile';
 
 const fixture = (name: string) => join(import.meta.dirname, 'fixtures', name);
 const EQ = fixture('small_EQ.xml');
@@ -14,7 +15,8 @@ const RAS = fixture('nc_RAS.xml');
 const STATE = fixture('grid_state.xml');
 const SV = fixture('grid_SV.xml');
 const MORE = fixture('nc_CO_more.xml');
-const input = (page: Page) => page.locator('input[type=file]');
+const input = (page: Page) => page.getByLabel('Choose files');
+const folderInput = (page: Page) => page.getByLabel('Choose a folder');
 
 test.beforeEach(async ({ page }) => {
   await page.goto('./');
@@ -694,6 +696,52 @@ test.describe('editing', () => {
     await expect(page.getByTestId('edited-files')).toContainText('1 file edited');
     await page.getByTestId('tree').getByRole('searchbox').fill('breaker c');
     await expect(page.getByTestId('hits').getByRole('button', { name: /Breaker C/ })).toHaveCount(0);
+  });
+});
+
+test.describe('choosing many files at once', () => {
+  const scratch = () => mkdtempSync(join(tmpdir(), 'gridox-'));
+
+  test('a zip archive, with one in it, is read as the files it holds', async ({ page }) => {
+    const inner = zip([{ path: 'state/grid_SV.xml', data: readFileSync(SV), deflate: true }]);
+    const archive = zip([
+      { path: 'grid/grid_EQ.xml', data: readFileSync(GRID), deflate: true },
+      { path: 'grid/grid_state.xml', data: readFileSync(STATE) },
+      { path: 'sv.zip', data: inner },
+      { path: 'README.txt', data: 'not a model' },
+    ]);
+    const path = join(scratch(), 'model.zip');
+    writeFileSync(path, archive);
+    await input(page).setInputFiles(path);
+    await expect(page.getByTestId('totals')).toContainText('from 3 files');
+    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
+  });
+
+  test('an archive that cannot be read is said so, and the rest is read', async ({ page }) => {
+    const path = join(scratch(), 'broken.zip');
+    writeFileSync(path, 'PK, but no more');
+    await input(page).setInputFiles([path, GRID]);
+    await expect(page.getByTestId('skipped')).toContainText('broken.zip: the archive could not be read (not a zip archive)');
+    await expect(page.getByTestId('totals')).toContainText('from 1 file');
+  });
+
+  test('a folder: its XML files and zip archives, in its subfolders too', async ({ page }) => {
+    const dir = scratch();
+    mkdirSync(join(dir, 'igm', 'state'), { recursive: true });
+    cpSync(GRID, join(dir, 'igm', 'grid_EQ.xml'));
+    cpSync(STATE, join(dir, 'igm', 'state', 'grid_state.xml'));
+    writeFileSync(join(dir, 'sv.zip'), zip([{ path: 'grid_SV.xml', data: readFileSync(SV), deflate: true }]));
+    writeFileSync(join(dir, 'notes.txt'), 'not a model');
+    await folderInput(page).setInputFiles(dir);
+    await expect(page.getByTestId('totals')).toContainText('from 3 files');
+  });
+
+  test('a folder with nothing to read is said so', async ({ page }) => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'notes.txt'), 'not a model');
+    await folderInput(page).setInputFiles(dir);
+    await expect(page.getByTestId('folder-empty')).toContainText('There are no XML files or zip archives in that folder.');
   });
 });
 
