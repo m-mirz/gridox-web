@@ -500,6 +500,32 @@ test.describe('power flow', () => {
     await expect(page.getByTestId('pf-options')).toContainText('reactive limits not held');
   });
 
+  test('from the switches, it solves as from the TP', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV]);
+    const pf = page.getByTestId('power-flow');
+    await pf.getByLabel('Buses from').selectOption({ label: 'the switches' });
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
+    await expect(page.getByTestId('pf-options')).toContainText('the buses from the switches');
+  });
+
+  test('a remedial action applied opens its switch, and says what that changed', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV, RA]);
+    const pf = page.getByTestId('power-flow');
+    await pf.getByLabel('Remedial action applied').selectOption({ label: 'Open Breaker A' });
+    await expect(pf.getByLabel('Buses from')).toBeDisabled();
+    await pf.getByRole('button', { name: 'Solve' }).click();
+    const applied = page.getByTestId('pf-applied');
+    await expect(applied).toContainText('With Open Breaker A applied: Breaker A closed → open.');
+    await expect(applied).toContainText('1 node solved, 2 without it.');
+    await expect(applied).toContainText('Currents past their limits: 0, 1 without it.');
+    // The files are as they were: no file is edited.
+    await expect(page.getByTestId('edited-files')).toBeHidden();
+    await pf.getByLabel('Remedial action applied').selectOption({ label: 'Keep Breaker A closed' });
+    await pf.getByRole('button', { name: 'Solve again' }).click();
+    await expect(applied).toContainText('No voltage changes');
+  });
+
   test('says why nothing was solved, and a new file takes the result away', async ({ page }) => {
     await input(page).setInputFiles(GRID);
     const pf = page.getByTestId('power-flow');
