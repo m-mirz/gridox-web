@@ -92,21 +92,45 @@ impl JsSession {
     }
 
     /// A power flow, the imbalance taken by `sharing` (`reference`, `capability` or `equal`), with
-    /// reactive limits held if `q_limits`.
+    /// reactive limits held if `q_limits`, the buses from the switches if `switches`; with
+    /// `action`, that remedial action applied, from the switches.
     #[wasm_bindgen(js_name = powerFlow)]
-    pub fn power_flow(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+    pub fn power_flow(
+        &mut self,
+        sharing: &str,
+        q_limits: bool,
+        switches: bool,
+        action: Option<String>,
+    ) -> Result<String, JsError> {
         let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
-        let options = PowerFlowOptions { sharing, q_limits };
-        Ok(self.0.power_flow(options).to_string())
+        let options = PowerFlowOptions {
+            sharing,
+            q_limits,
+            switches,
+        };
+        Ok(match action {
+            Some(action) => self.0.power_flow_applied(options, &action),
+            None => self.0.power_flow(options),
+        }
+        .to_string())
     }
 
     /// Readies a security analysis of the contingencies loaded; see [`Session::analysis_start`].
     #[wasm_bindgen(js_name = analysisStart)]
-    pub fn analysis_start(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+    pub fn analysis_start(
+        &mut self,
+        sharing: &str,
+        q_limits: bool,
+        switches: bool,
+    ) -> Result<String, JsError> {
         let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
         Ok(self
             .0
-            .analysis_start(PowerFlowOptions { sharing, q_limits })
+            .analysis_start(PowerFlowOptions {
+                sharing,
+                q_limits,
+                switches,
+            })
             .to_string())
     }
 

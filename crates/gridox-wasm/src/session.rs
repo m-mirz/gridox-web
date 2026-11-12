@@ -2013,7 +2013,7 @@ mod tests {
         assert_eq!(flow["error"], Value::Null);
         assert_eq!(
             flow["options"],
-            json!({ "sharing": "reference", "qLimits": true })
+            json!({ "sharing": "reference", "qLimits": true, "switches": false })
         );
         let component = &flow["components"][0];
         assert_eq!(component["status"], "converged");
@@ -2052,6 +2052,79 @@ mod tests {
         assert_eq!(violation["equipment"]["label"], "Anvil-Birch");
         assert_eq!(violation["kind"], "PATL");
         assert_eq!(violation["limitAmps"], 200.0);
+    }
+
+    #[test]
+    fn from_the_switches_the_small_grid_solves_as_from_its_tp() {
+        let mut session = solvable();
+        let tp = session.power_flow(PowerFlowOptions::default());
+        let switches = session.power_flow(PowerFlowOptions {
+            switches: true,
+            ..Default::default()
+        });
+        assert_eq!(switches["options"]["switches"], true);
+        assert_eq!(switches["components"][0]["status"], "converged");
+        let pu = |f: &Value, label: &str| {
+            f["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|n| n["label"] == label)
+                .unwrap()["pu"]
+                .as_f64()
+                .unwrap()
+        };
+        assert!((pu(&tp, "Birch 110") - pu(&switches, "Birch 110")).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_remedial_action_applied_opens_its_switch_and_the_grid_follows() {
+        let mut session = solvable();
+        session.add_file("nc_RA.xml", RA);
+        let actions = session.remedial_actions();
+        let id = |label: &str| {
+            actions
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["label"] == label)
+                .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let open = session.power_flow_applied(PowerFlowOptions::default(), &id("Open Breaker A"));
+        assert_eq!(open["error"], Value::Null, "{open}");
+        assert_eq!(open["actionSwitches"][0]["label"], "Breaker A");
+        assert_eq!(open["actionSwitches"][0]["openAfter"], true);
+        // Birch is cut off from Anvil, its angle reference: not solved, and the line carries nothing.
+        let birch = open["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Birch 110")
+            .unwrap();
+        assert_eq!(birch["pu"], Value::Null);
+        assert_eq!(open["compared"]["violationsBefore"], 1);
+        assert_eq!(open["compared"]["violationsAfter"], 0);
+        assert_eq!(open["compared"]["solvedAfter"], 1);
+        // The files are as they were.
+        assert_eq!(session.file_text("grid_state.xml"), Some(STATE));
+        assert!(
+            session.power_flow(PowerFlowOptions::default())["violations"]
+                .as_array()
+                .unwrap()
+                .len()
+                == 1
+        );
+        // A switch left as it is changes nothing.
+        let closed =
+            session.power_flow_applied(PowerFlowOptions::default(), &id("Keep Breaker A closed"));
+        assert_eq!(closed["compared"]["changed"], 0);
+        assert!(
+            session.power_flow_applied(PowerFlowOptions::default(), "_nothing")["error"]
+                .is_string()
+        );
     }
 
     #[test]

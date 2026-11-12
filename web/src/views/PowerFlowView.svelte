@@ -2,7 +2,7 @@
   import type { Reveal } from '../grid/model';
   import { count } from '../grid/model';
   import type { WorkerClient } from '../worker/client';
-  import type { ComponentStatus, PowerFlow, Sharing } from '../worker/protocol';
+  import type { ComponentStatus, Linked, PowerFlow, Sharing } from '../worker/protocol';
   import Links from './Links.svelte';
 
   /**
@@ -27,6 +27,11 @@
 
   let sharing = $state<Sharing>('reference');
   let qLimits = $state(true);
+  /** The buses from the switches as the SSH sets them, rather than from the TP. */
+  let switches = $state(false);
+  /** A remedial action to apply, by mRID: the switch states it sets, solved from the switches. */
+  let action = $state('');
+  let actions = $state.raw<Linked[]>([]);
   let solving = $state(false);
   let flow = $state.raw<PowerFlow | null>(null);
   let failed = $state<string | null>(null);
@@ -37,7 +42,16 @@
     void version;
     flow = null;
     failed = null;
+    action = '';
     onresult(null);
+    let live = true;
+    // The actions that set a switch: those a solve from the switches can apply.
+    client.request<'remedialActions'>({ kind: 'remedialActions' }).then((found) => {
+      if (live) actions = found.filter((a) => a.applied.length).map((a) => ({ id: a.id, label: a.label, class: a.class }));
+    });
+    return () => {
+      live = false;
+    };
   });
 
   async function solve() {
@@ -45,7 +59,7 @@
     failed = null;
     const started = performance.now();
     try {
-      flow = await client.request<'powerFlow'>({ kind: 'powerFlow', sharing, qLimits });
+      flow = await client.request<'powerFlow'>({ kind: 'powerFlow', sharing, qLimits, switches: switches || !!action, action: action || null });
       elapsed = performance.now() - started;
       onresult(flow.error ? null : flow);
     } catch (error) {
@@ -127,6 +141,22 @@
         </select>
       </label>
       <label><input type="checkbox" bind:checked={qLimits} disabled={solving} /> Hold reactive limits</label>
+      <label>
+        Buses from
+        <select bind:value={switches} disabled={solving || !!action}>
+          <option value={false}>the TP files</option>
+          <option value={true}>the switches</option>
+        </select>
+      </label>
+      {#if actions.length}
+        <label>
+          Remedial action applied
+          <select bind:value={action} disabled={solving}>
+            <option value="">none</option>
+            {#each actions as a (a.id)}<option value={a.id}>{a.label ?? a.id}</option>{/each}
+          </select>
+        </label>
+      {/if}
       <button type="button" onclick={solve} disabled={solving}>{solving ? 'Solving…' : flow ? 'Solve again' : 'Solve'}</button>
       {#if flow && elapsed !== null && !solving}<span class="sub">{Math.round(elapsed).toLocaleString('en')} ms, by gridoxide, in this browser</span>{/if}
     </div>
@@ -137,9 +167,31 @@
       <p role="alert" data-testid="pf-error">Nothing was solved: {flow.error}</p>
     {:else if flow}
       <p class="verdict" class:stalled data-testid="pf-verdict">{verdict}</p>
+      {#if flow.action && flow.actionSwitches && flow.compared}
+        {@const c = flow.compared}
+        <div class="applied" data-testid="pf-applied">
+          <p>
+            With <Links inline links={[flow.action]} {onnavigate} /> applied:
+            {#each flow.actionSwitches as s, i (s.id)}<Links inline links={[s]} {onnavigate} />
+              {s.open === null ? '' : s.open === 'true' ? 'open' : 'closed'} → {s.openAfter ? 'open' : 'closed'}{i < flow.actionSwitches.length - 1 ? ', ' : '.'}{/each}
+          </p>
+          <p>
+            {#if c.changed}
+              The voltages of {count(c.changed, 'node')} change, by up to {fixed(c.largestChange, 4)} p.u.
+            {:else}
+              No voltage changes: the switches were as it sets them, or the network does not part.
+            {/if}
+            {c.solvedBefore === c.solvedAfter ? `${count(c.solvedAfter, 'node')} solved, as without it.` : `${count(c.solvedAfter, 'node')} solved, ${c.solvedBefore.toLocaleString('en')} without it.`}
+            Currents past their limits: {c.violationsAfter.toLocaleString('en')}, {c.violationsBefore.toLocaleString('en')} without it.
+          </p>
+          {#if c.most.length}
+            <p class="sub">Most changed: {#each c.most as m, i (m.id)}<Links inline links={[m]} {onnavigate} /> {fixed(m.change, 4)}{i < c.most.length - 1 ? ', ' : '.'}{/each}</p>
+          {/if}
+        </div>
+      {/if}
       <p class="sub" data-testid="pf-options">
         With the imbalance taken by {SHARING[flow.options.sharing]}{flow.sharedMW !== null ? ` (${fixed(flow.sharedMW, 1)} MW in all)` : ''},
-        reactive limits {flow.options.qLimits ? 'held' : 'not held'}.
+        reactive limits {flow.options.qLimits ? 'held' : 'not held'}, the buses from {flow.options.switches ? 'the switches' : 'the TP files'}.
         {#if flow.options.qLimits}
           {flow.switched.length ? `They took ${count(flow.switched.length, 'node')} off voltage control:` : 'They took no machine off voltage control.'}
           <Links inline links={flow.switched} {onnavigate} />
@@ -265,6 +317,17 @@
 
   .verdict.stalled {
     color: var(--violation);
+  }
+
+  .applied {
+    margin: 0.5rem 0;
+    padding: 0.4rem 0.6rem;
+    border-left: 4px solid var(--accent);
+    background: var(--panel);
+  }
+
+  .applied p {
+    margin: 0.2rem 0;
   }
 
   .scroll {

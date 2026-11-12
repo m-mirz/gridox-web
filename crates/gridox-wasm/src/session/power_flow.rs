@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cimmodel::base::FieldValue;
 use cimview::mrid_of;
+use gridoxide::cgmes::CgmesTopologyMode;
 use gridoxide::security_analysis::{
     ImbalanceSharing, LimitKind, SecurityOptions, current_limits, monitor, solve,
 };
@@ -19,6 +20,8 @@ use super::Session;
 pub struct Options {
     pub sharing: ImbalanceSharing,
     pub q_limits: bool,
+    /// The buses from the switches as the SSH sets them, rather than from the TP.
+    pub switches: bool,
 }
 
 impl Default for Options {
@@ -28,6 +31,7 @@ impl Default for Options {
         Self {
             sharing: ImbalanceSharing::Reference,
             q_limits: true,
+            switches: false,
         }
     }
 }
@@ -67,10 +71,15 @@ impl Session {
     /// Solves the model with `options`. An error, such as a model without the topology a power
     /// flow needs, is an answer too, under `error`.
     pub fn power_flow(&mut self, options: Options) -> Value {
-        let given = json!({ "sharing": options.sharing.name(), "qLimits": options.q_limits });
+        let given = json!({ "sharing": options.sharing.name(), "qLimits": options.q_limits, "switches": options.switches });
         let security = SecurityOptions {
             sharing: options.sharing,
             enforce_q_limits: options.q_limits,
+            topology: if options.switches {
+                CgmesTopologyMode::NodeBreakerFromEq
+            } else {
+                CgmesTopologyMode::BusBranchFromTp
+            },
             ..Default::default()
         };
         let state = match solve(&self.dataset, &security) {
@@ -322,5 +331,122 @@ impl Session {
             },
             "sBaseMW": s_base_mw,
         })
+    }
+
+    /// The switch states the remedial action `action` sets: (switch, open after), as its row of
+    /// [`Session::remedial_actions`] gives them.
+    fn applied_states(&mut self, action: &str) -> Option<Vec<(String, bool)>> {
+        let rows = self.remedial_actions();
+        let row = rows.as_array()?.iter().find(|r| r["id"] == action)?.clone();
+        Some(
+            row["applied"]
+                .as_array()?
+                .iter()
+                .filter_map(|s| Some((s["id"].as_str()?.to_string(), s["openAfter"].as_bool()?)))
+                .collect(),
+        )
+    }
+
+    /// The power flow with the remedial action `action` applied, from the switches: the loaded
+    /// files decoded again with the switch states the action sets, as a later SSH would set them,
+    /// beside the same power flow without it. The files are not changed.
+    pub fn power_flow_applied(&mut self, options: Options, action: &str) -> Value {
+        let options = Options {
+            switches: true,
+            ..options
+        };
+        let Some(states) = self.applied_states(action) else {
+            return json!({ "error": format!("`{action}` is no remedial action of these files") });
+        };
+        if states.is_empty() {
+            return json!({ "error": "the action sets no switch: it has no topology action with a state for Switch.open" });
+        }
+        let before = self.power_flow(options);
+        // The action's states, as an SSH of their own, after the files.
+        let mut ssh = String::from(
+            r#"<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">"#,
+        );
+        for (switch, open) in &states {
+            let class = self
+                .dataset
+                .entries
+                .get(switch.as_str())
+                .map_or("Switch", |e| e.local_name());
+            ssh.push_str(&format!(r##"<cim:{class} rdf:about="#{switch}"><cim:Switch.open>{open}</cim:Switch.open></cim:{class}>"##));
+        }
+        ssh.push_str("</rdf:RDF>");
+        let mut applied = cimmodel::CimDataset::default();
+        for (_, text) in &self.texts.files {
+            if let Ok(found) = cimmodel::CimDataset::decode_str(text) {
+                applied.merge(found);
+            }
+        }
+        match cimmodel::CimDataset::decode_str(&ssh) {
+            Ok(found) => applied.merge(found),
+            Err(e) => return json!({ "error": e.to_string() }),
+        }
+        // The grid stays the one drawn: views are built on the files as loaded.
+        self.views();
+        let loaded = std::mem::replace(&mut self.dataset, applied);
+        let mut after = self.power_flow(options);
+        self.dataset = loaded;
+        if !after["error"].is_null() {
+            return after;
+        }
+        // What applying it changed: each node's voltage, and the currents past their limits.
+        let pu = |flow: &Value| -> HashMap<String, f64> {
+            flow["nodes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|n| Some((n["id"].as_str()?.to_string(), n["pu"].as_f64()?)))
+                .collect()
+        };
+        let (was, now) = (pu(&before), pu(&after));
+        let mut changes: Vec<(f64, String)> = now
+            .iter()
+            .filter_map(|(id, v)| Some(((v - was.get(id)?).abs(), id.clone())))
+            .filter(|(d, _)| *d > 1e-6)
+            .collect();
+        changes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let count = |flow: &Value, status: &str| {
+            flow["components"].as_array().map_or(0, |c| {
+                c.iter()
+                    .filter(|c| c["status"] == status)
+                    .map(|c| c["nodes"].as_u64().unwrap_or(0))
+                    .sum::<u64>()
+            })
+        };
+        after["action"] = self.linked(action);
+        after["actionSwitches"] = Value::Array(
+            states
+                .iter()
+                .map(|(s, open)| {
+                    let mut cell = self.linked(s);
+                    cell["open"] = json!(
+                        self.dataset
+                            .entries
+                            .get(s.as_str())
+                            .and_then(|e| e.get_str("Switch.open"))
+                    );
+                    cell["openAfter"] = json!(open);
+                    cell
+                })
+                .collect(),
+        );
+        after["compared"] = json!({
+            "violationsBefore": before["violations"].as_array().map_or(0, Vec::len),
+            "violationsAfter": after["violations"].as_array().map_or(0, Vec::len),
+            "solvedBefore": count(&before, "converged"),
+            "solvedAfter": count(&after, "converged"),
+            "largestChange": changes.first().map(|c| round(c.0, 5)),
+            "changed": changes.len(),
+            "most": changes.iter().take(10).map(|(d, id)| {
+                let mut cell = self.linked(id);
+                cell["change"] = json!(round(*d, 5));
+                cell
+            }).collect::<Vec<_>>(),
+        });
+        after
     }
 }

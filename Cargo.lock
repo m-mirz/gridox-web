@@ -444,8 +444,6 @@ dependencies = [
 [[package]]
 name = "gridoxide"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38959bd868ed47e6c0e761456339be9deaf90d4a50b86e75cae574c80763a188"
 dependencies = [
  "cimoxide-model",
  "faer",
@@ -460,8 +458,6 @@ dependencies = [
 [[package]]
 name = "gridoxide-core"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecf019ed720d3db081568b9c4e959adb57883a85f0d901de50d89940c8657687"
 dependencies = [
  "faer",
  "gridoxide-sparse",
@@ -473,8 +469,6 @@ dependencies = [
 [[package]]
 name = "gridoxide-sparse"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4364a65644c8bcd525a4bf9945e90c0c9b60f251bde6a7e7bcb1f478f49a88d7"
 dependencies = [
  "faer",
  "num-complex",

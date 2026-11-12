@@ -29,6 +29,7 @@
   let supplied = $state.raw<SarResult[]>([]);
   let sharing = $state<Sharing>('capability');
   let qLimits = $state(false);
+  let switches = $state(false);
   let running = $state(false);
   let stopping = false;
   let progress = $state<{ done: number; total: number } | null>(null);
@@ -93,7 +94,7 @@
     const started = performance.now();
     const pool: WorkerClient[] = [];
     try {
-      const first = await client.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits });
+      const first = await client.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits, switches });
       if (first.error) {
         failed = first.error;
         return;
@@ -134,7 +135,7 @@
           shares.push(
             (async () => {
               await helper.request<'loadOnly'>({ kind: 'loadOnly', files });
-              const ready = await helper.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits });
+              const ready = await helper.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits, switches });
               if (ready.error || ready.total !== total) return;
               helping += 1;
               await work(async (range) => {
@@ -246,6 +247,13 @@
             </select>
           </label>
           <label><input type="checkbox" bind:checked={qLimits} disabled={running} /> Hold reactive limits</label>
+          <label>
+            Buses from
+            <select bind:value={switches} disabled={running}>
+              <option value={false}>the TP files</option>
+              <option value={true}>the switches</option>
+            </select>
+          </label>
           {#if running}
             <button type="button" onclick={() => (stopping = true)}>Stop</button>
           {:else}
@@ -270,7 +278,7 @@
           {count(analysis.baseViolations, 'violation')} in the base case, {count(analysis.violations, 'violation')} after contingencies.
         </p>
         <p class="sub" data-testid="sa-options">
-          Scenario {analysis.scenarioTime}; the imbalance taken by {SHARING[analysis.options.sharing]}, reactive limits {analysis.options.qLimits ? 'held' : 'not held'}.
+          Scenario {analysis.scenarioTime}; the imbalance taken by {SHARING[analysis.options.sharing]}, reactive limits {analysis.options.qLimits ? 'held' : 'not held'}, the buses from {analysis.options.switches ? 'the switches' : 'the TP files'}.
           {#if elapsed !== null}{(elapsed / 1000).toFixed(1)} s in this browser{workers > 1 ? `, in ${workers} workers` : ''}.{/if}
           {#if analysis.pastLimits.length}Sharing took machines past their limits {count(analysis.pastLimits.length, 'time')}.{/if}
         </p>
