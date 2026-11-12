@@ -14,7 +14,3 @@ repository = "https://github.com/m-mirz/gridox-web"
 lto = true
 codegen-units = 1
 panic = "abort"
-
-# Until gridoxide releases solving from the switches (gridoxide PR #35): the local checkout.
-[patch.crates-io]
-gridoxide = { path = "../gridoxide" }
