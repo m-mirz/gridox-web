@@ -1,9 +1,10 @@
 //! A security analysis of the loaded model, by gridoxide: its base case and each contingency of
 //! the loaded CO data solved, currents held against their limits, and a SAR of what is found.
 //!
-//! The page runs it a batch of contingencies at a time, for its progress and so the worker can
-//! answer in between. Each batch is gridoxide's `run` on the contingencies of that batch, and the
-//! batches merge into what one `run` on them all gives (see [`merge`]).
+//! The page runs it a range of contingencies at a time, for its progress and so the worker can
+//! answer in between, and may hand ranges to other workers holding the same model, whose parts
+//! come back as JSON. Each range is gridoxide's `run` on the contingencies of that range, and the
+//! ranges merge, in whatever order they come, into what one `run` on them all gives (see [`merge`]).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,8 +12,8 @@ use cimmodel::CimDataset;
 use cimmodel::base::FieldValue;
 use cimview::mrid_of;
 use gridoxide::security_analysis::{
-    Contingency, LimitKind, SarHeader, SecurityAnalysis, SecurityOptions, Violation,
-    read_contingencies, run,
+    Contingency, CurrentLimit, ImbalanceSharing, LimitKind, PastLimit, SarHeader, SecurityAnalysis,
+    SecurityOptions, TerminalFlow, Violation, read_contingencies, run,
 };
 use serde_json::{Value, json};
 
@@ -27,12 +28,18 @@ pub(super) struct Analysis {
     defining: HashMap<String, Vec<String>>,
     /// The CO datasets' headers, which a SAR requires.
     headers: Vec<String>,
+    /// Where the next step starts.
     next: usize,
+    /// How many contingencies are merged into `done`, or wait for it in `waiting`.
+    counted: usize,
     done: Option<SecurityAnalysis>,
+    /// Parts from other workers that came before this one had a base case of its own.
+    waiting: Vec<SecurityAnalysis>,
 }
 
-/// `more`, the analysis of the contingencies after those of `into`, merged in: the base case is
-/// the same in each, so it is kept once.
+/// `more`, the analysis of other contingencies than those of `into`, merged in: the base case is
+/// the same in each, so it is kept once. What `run` sorts is sorted again, and the rest put in
+/// the order `run` gives it, by contingency, so the order of merging does not matter.
 fn merge(into: &mut SecurityAnalysis, more: SecurityAnalysis) {
     into.violations.extend(
         more.violations
@@ -50,11 +57,91 @@ fn merge(into: &mut SecurityAnalysis, more: SecurityAnalysis) {
     into.stalled.extend(more.stalled);
     into.stalled.sort();
     into.absent.extend(more.absent);
+    into.absent.sort();
     into.past_limits.extend(
         more.past_limits
             .into_iter()
             .filter(|p| p.contingency.is_some()),
     );
+    into.past_limits
+        .sort_by(|a, b| a.contingency.cmp(&b.contingency));
+}
+
+fn limit_kind(name: &str) -> LimitKind {
+    match name {
+        "PATL" => LimitKind::Patl,
+        "TATL" => LimitKind::Tatl,
+        _ => LimitKind::Other,
+    }
+}
+
+/// A part's contingency results as JSON, to cross from one worker to another: the base case's
+/// stay behind, as the worker merging them has its own.
+fn part_to_json(part: &SecurityAnalysis, count: usize) -> Value {
+    json!({
+        "count": count,
+        "solved": part.solved,
+        "stalled": part.stalled,
+        "absent": part.absent,
+        "violations": part.violations.iter().filter(|v| v.contingency.is_some()).map(|v| json!([
+            v.contingency, v.terminal, v.limit.mrid, v.limit.amps, kind(v.limit.kind),
+            v.flow.p_mw, v.flow.q_mvar, v.flow.amps,
+        ])).collect::<Vec<_>>(),
+        "pastLimits": part.past_limits.iter().filter(|p| p.contingency.is_some()).map(|p| json!([
+            p.contingency, p.machine, p.mw, p.limit,
+        ])).collect::<Vec<_>>(),
+    })
+}
+
+/// A part read back from [`part_to_json`], and how many contingencies it covers. What it does not
+/// carry, the base case among it, the merge takes from the worker's own.
+fn part_from_json(part: &Value, sharing: ImbalanceSharing) -> Option<(SecurityAnalysis, usize)> {
+    let text = |v: &Value| v.as_str().map(str::to_string);
+    let texts = |v: &Value| -> Option<Vec<String>> { v.as_array()?.iter().map(text).collect() };
+    let violations = part["violations"]
+        .as_array()?
+        .iter()
+        .map(|v| {
+            Some(Violation {
+                contingency: text(&v[0]),
+                terminal: text(&v[1])?,
+                limit: CurrentLimit {
+                    mrid: text(&v[2])?,
+                    amps: v[3].as_f64()?,
+                    kind: limit_kind(v[4].as_str()?),
+                },
+                flow: TerminalFlow {
+                    p_mw: v[5].as_f64()?,
+                    q_mvar: v[6].as_f64()?,
+                    amps: v[7].as_f64()?,
+                },
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let past_limits = part["pastLimits"]
+        .as_array()?
+        .iter()
+        .map(|p| {
+            Some(PastLimit {
+                contingency: text(&p[0]),
+                machine: text(&p[1])?,
+                mw: p[2].as_f64()?,
+                limit: p[3].as_f64()?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let found = SecurityAnalysis {
+        sharing,
+        scenario_time: String::new(),
+        base: HashMap::new(),
+        violations,
+        solved: part["solved"].as_u64()? as usize,
+        stalled: texts(&part["stalled"])?,
+        absent: texts(&part["absent"])?,
+        past_limits,
+        requires: Vec::new(),
+    };
+    Some((found, part["count"].as_u64()? as usize))
 }
 
 /// At one terminal: the contingencies taking it past a limit, the worst of them and by how much,
@@ -134,21 +221,21 @@ impl Session {
             defining,
             headers: self.contingency_headers(),
             next: 0,
+            counted: 0,
             done: None,
+            waiting: Vec::new(),
         });
         json!({ "error": null, "total": total })
     }
 
-    /// Analyses the next `count` contingencies. How many are done, of how many; an error if the
-    /// base case does not converge, which ends the analysis.
-    pub fn analysis_step(&mut self, count: usize) -> Value {
-        let Some(analysis) = self.analysis.as_mut() else {
-            return json!({ "error": "no analysis was started" });
-        };
-        let end = (analysis.next + count.max(1)).min(analysis.contingencies.len());
-        // This batch's contingencies, as a CO dataset of their own.
+    /// The contingencies `from..to` analysed, on their own. An error ends the analysis.
+    fn run_range(&mut self, from: usize, to: usize) -> Result<SecurityAnalysis, String> {
+        let analysis = self.analysis.as_ref().ok_or("no analysis was started")?;
+        let to = to.min(analysis.contingencies.len());
+        let from = from.min(to);
+        // This range's contingencies, as a CO dataset of their own.
         let mut batch = CimDataset::default();
-        let ids = analysis.contingencies[analysis.next..end]
+        let ids = analysis.contingencies[from..to]
             .iter()
             .flat_map(|c| analysis.defining[&c.mrid].iter())
             .chain(&analysis.headers);
@@ -167,25 +254,88 @@ impl Session {
             enforce_q_limits: analysis.options.q_limits,
             ..Default::default()
         };
-        match run(&mut self.dataset, &batch, &security) {
-            Ok(found) => match analysis.done.as_mut() {
-                Some(done) => merge(done, found),
-                None => analysis.done = Some(found),
-            },
-            Err(error) => {
-                let total = analysis.contingencies.len();
-                self.analysis = None;
-                return json!({ "error": error, "done": 0, "total": total });
+        run(&mut self.dataset, &batch, &security).inspect_err(|_| self.analysis = None)
+    }
+
+    /// `part`, of `count` contingencies, merged in. One from another worker, `own` false, has no
+    /// base case: it waits for one of this worker's own.
+    fn absorb(&mut self, part: SecurityAnalysis, count: usize, own: bool) {
+        let Some(analysis) = self.analysis.as_mut() else {
+            return;
+        };
+        analysis.counted += count;
+        match analysis.done.as_mut() {
+            Some(done) => merge(done, part),
+            None if own => analysis.done = Some(part),
+            None => analysis.waiting.push(part),
+        }
+        if let Some(done) = analysis.done.as_mut() {
+            for waiting in analysis.waiting.drain(..) {
+                merge(done, waiting);
             }
         }
-        analysis.next = end;
-        json!({ "error": null, "done": end, "total": analysis.contingencies.len() })
+    }
+
+    fn progress(&self) -> Value {
+        match &self.analysis {
+            Some(a) => json!({ "error": null, "done": a.counted, "total": a.contingencies.len() }),
+            None => json!({ "error": "no analysis was started", "done": 0, "total": 0 }),
+        }
+    }
+
+    /// Analyses the next `count` contingencies. How many are done, of how many; an error if the
+    /// base case does not converge, which ends the analysis.
+    pub fn analysis_step(&mut self, count: usize) -> Value {
+        let Some(from) = self.analysis.as_ref().map(|a| a.next) else {
+            return self.progress();
+        };
+        self.analysis_range(from, from + count.max(1))
+    }
+
+    /// Analyses the contingencies `from..to` here, and merges them in.
+    pub fn analysis_range(&mut self, from: usize, to: usize) -> Value {
+        match self.run_range(from, to) {
+            Ok(found) => {
+                let analysis = self.analysis.as_mut().expect("ran");
+                let to = to.min(analysis.contingencies.len());
+                analysis.next = analysis.next.max(to);
+                self.absorb(found, to - from.min(to), true);
+                self.progress()
+            }
+            Err(error) => json!({ "error": error, "done": 0, "total": 0 }),
+        }
+    }
+
+    /// Analyses the contingencies `from..to` for another worker: the part to give it.
+    pub fn analysis_part(&mut self, from: usize, to: usize) -> Value {
+        let total = self.analysis.as_ref().map_or(0, |a| a.contingencies.len());
+        match self.run_range(from, to) {
+            Ok(found) => {
+                json!({ "error": null, "part": part_to_json(&found, to.min(total) - from.min(to.min(total))) })
+            }
+            Err(error) => json!({ "error": error }),
+        }
+    }
+
+    /// A part another worker analysed, merged in.
+    pub fn analysis_absorb(&mut self, part: &Value) -> Value {
+        let Some(sharing) = self.analysis.as_ref().map(|a| a.options.sharing) else {
+            return self.progress();
+        };
+        match part_from_json(part, sharing) {
+            Some((found, count)) => {
+                self.absorb(found, count, false);
+                self.progress()
+            }
+            None => json!({ "error": "a part from another worker could not be read" }),
+        }
     }
 
     fn finished(&self) -> Option<(&Analysis, &SecurityAnalysis)> {
         let analysis = self.analysis.as_ref()?;
         let done = analysis.done.as_ref()?;
-        (analysis.next == analysis.contingencies.len()).then_some((analysis, done))
+        let all = analysis.counted == analysis.contingencies.len() && analysis.waiting.is_empty();
+        all.then_some((analysis, done))
     }
 
     /// The equipment of a terminal, linked.

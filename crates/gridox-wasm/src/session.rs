@@ -2133,6 +2133,36 @@ mod tests {
         }
     }
 
+    /// A session holding the analysed set, its analysis started.
+    fn started() -> Session {
+        let mut session = solvable();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.add_file("nc_CO_more.xml", MORE);
+        session.analysis_start(PowerFlowOptions::default());
+        session
+    }
+
+    #[test]
+    fn parts_from_other_workers_merge_in_any_order_into_the_analysis_in_one() {
+        let mut whole = analysed(10);
+        let mut main = started();
+        let mut helper = started();
+        // As it crosses from worker to worker: as text.
+        let mut part = |from, to| -> Value {
+            let found = helper.analysis_part(from, to);
+            assert_eq!(found["error"], Value::Null);
+            serde_json::from_str(&found["part"].to_string()).unwrap()
+        };
+        // Before this worker has a base case of its own, a part waits for it.
+        let late = main.analysis_absorb(&part(2, 4));
+        assert_eq!(late["done"], 2);
+        assert_eq!(main.analysis_result(), Value::Null);
+        main.analysis_range(1, 2);
+        main.analysis_absorb(&part(0, 1));
+        assert_eq!(main.analysis_result(), whole.analysis_result());
+        assert_eq!(main.sar(&header()), whole.sar(&header()));
+    }
+
     #[test]
     fn an_analysis_says_what_each_contingency_gives() {
         let result = analysed(2).analysis_result();

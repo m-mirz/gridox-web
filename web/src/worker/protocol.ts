@@ -387,6 +387,11 @@ export type Request =
   | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean }
   | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean }
   | { kind: 'analysisStep'; count: number }
+  | { kind: 'analysisRange'; from: number; to: number }
+  | { kind: 'analysisPart'; from: number; to: number }
+  | { kind: 'analysisAbsorb'; part: unknown }
+  | { kind: 'files' }
+  | { kind: 'loadOnly'; files: File[] }
   | { kind: 'analysisResult' }
   | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
   | { kind: 'sarDefaults' }
@@ -414,6 +419,13 @@ export interface Answers {
   powerFlow: PowerFlow;
   analysisStart: AnalysisProgress;
   analysisStep: AnalysisProgress;
+  analysisRange: AnalysisProgress;
+  /** A part of an analysis, for the worker merging it. */
+  analysisPart: { error: string | null; part?: unknown };
+  analysisAbsorb: AnalysisProgress;
+  /** The files the model was loaded from, for another worker to load. */
+  files: File[];
+  loadOnly: Loaded;
   analysisResult: Analysis | null;
   analysisViolations: AnalysisViolation[];
   sarDefaults: Partial<SarHeader> | null;
@@ -425,4 +437,4 @@ export interface Answers {
 export type Envelope = { id: number; request: Request };
 
 /** A grid can be megabytes: it crosses as text, parsed once, on the side that wants it. */
-export type Reply = { id: number; ok: true; json: string } | { id: number; ok: false; error: string };
+export type Reply = { id: number; ok: true; json: string; files?: File[] } | { id: number; ok: false; error: string };

@@ -115,6 +115,24 @@ impl JsSession {
         self.0.analysis_step(count).to_string()
     }
 
+    #[wasm_bindgen(js_name = analysisRange)]
+    pub fn analysis_range(&mut self, from: usize, to: usize) -> String {
+        self.0.analysis_range(from, to).to_string()
+    }
+
+    /// The contingencies `from..to` analysed for another worker: `{ error, part }`.
+    #[wasm_bindgen(js_name = analysisPart)]
+    pub fn analysis_part(&mut self, from: usize, to: usize) -> String {
+        self.0.analysis_part(from, to).to_string()
+    }
+
+    /// A part from [`JsSession::analysis_part`] of another worker, as JSON, merged in.
+    #[wasm_bindgen(js_name = analysisAbsorb)]
+    pub fn analysis_absorb(&mut self, part: &str) -> Result<String, JsError> {
+        let part: serde_json::Value = serde_json::from_str(part)?;
+        Ok(self.0.analysis_absorb(&part).to_string())
+    }
+
     #[wasm_bindgen(js_name = analysisResult)]
     pub fn analysis_result(&mut self) -> String {
         self.0.analysis_result().to_string()

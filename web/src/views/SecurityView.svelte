@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Reveal } from '../grid/model';
   import { count } from '../grid/model';
-  import type { WorkerClient } from '../worker/client';
+  import { WorkerClient } from '../worker/client';
+  import ModelWorker from '../worker/worker?worker';
   import type { Analysis, AnalysisViolation, SarHeader, SarResult, Sharing } from '../worker/protocol';
   import Links from './Links.svelte';
 
@@ -67,6 +68,19 @@
 
   /** About a second per batch: each batch solves the base case again, so fewer is faster, and a second is still quick to stop. */
   const TARGET_MS = 1000;
+  /** Below this many contingencies, other workers cost more to start than they save. */
+  const SHARED_FROM = 40;
+  /** Each worker holds the whole model: more would cost more memory than they save time. */
+  const MAX_HELPERS = 3;
+
+  /** How many other workers to share an analysis of `total` contingencies with. */
+  function helpersFor(total: number): number {
+    if (total < SHARED_FROM) return 0;
+    return Math.max(0, Math.min(MAX_HELPERS, (navigator.hardwareConcurrency || 2) - 1));
+  }
+  let helping = $state(0);
+  /** How many workers the last analysis was shared by. */
+  let workers = $state(1);
 
   async function start() {
     running = true;
@@ -75,32 +89,82 @@
     stopped = null;
     analysis = null;
     open = null;
+    helping = 0;
     const started = performance.now();
+    const pool: WorkerClient[] = [];
     try {
       const first = await client.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits });
       if (first.error) {
         failed = first.error;
         return;
       }
-      progress = { done: 0, total: first.total };
-      let batch = 2;
-      while (progress.done < progress.total) {
-        if (stopping) {
-          stopped = `Stopped after ${progress.done.toLocaleString('en')} of ${count(progress.total, 'contingency', 'contingencies')}.`;
-          return;
+      const total = first.total;
+      progress = { done: 0, total };
+      // The contingencies not yet taken, as ranges: from the start, then any a worker gave back.
+      let next = 0;
+      const returned: [number, number][] = [];
+      const take = (n: number): [number, number] | null => {
+        if (returned.length) return returned.shift()!;
+        if (next >= total) return null;
+        const range: [number, number] = [next, Math.min(total, next + n)];
+        next = range[1];
+        return range;
+      };
+      const advance = (step: { error: string | null; done?: number; total: number }) => {
+        if (step.error) throw new Error(step.error);
+        progress = { done: step.done ?? 0, total };
+      };
+      /** Takes ranges until there are none, each about a second's work for the worker taking it. */
+      async function work(run: (range: [number, number]) => Promise<void>) {
+        let batch = 2;
+        for (let range = take(batch); range && !stopping; range = take(batch)) {
+          const before = performance.now();
+          await run(range);
+          batch = Math.max(1, Math.min(200, Math.round((batch * TARGET_MS) / Math.max(1, performance.now() - before))));
         }
-        const before = performance.now();
-        const step = await client.request<'analysisStep'>({ kind: 'analysisStep', count: batch });
-        if (step.error) {
-          failed = step.error;
-          return;
+      }
+      const here = work(async ([from, to]) => advance(await client.request<'analysisRange'>({ kind: 'analysisRange', from, to })));
+      const helpers = helpersFor(total);
+      const shares: Promise<void>[] = [];
+      if (helpers) {
+        const files = await client.request<'files'>({ kind: 'files' });
+        for (let i = 0; i < helpers; i++) {
+          const helper = new WorkerClient(() => new ModelWorker());
+          pool.push(helper);
+          shares.push(
+            (async () => {
+              await helper.request<'loadOnly'>({ kind: 'loadOnly', files });
+              const ready = await helper.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits });
+              if (ready.error || ready.total !== total) return;
+              helping += 1;
+              await work(async (range) => {
+                const found = await helper
+                  .request<'analysisPart'>({ kind: 'analysisPart', from: range[0], to: range[1] })
+                  .catch((error) => ({ error: String(error) }) as { error: string | null; part?: unknown });
+                if (found.error || found.part === undefined) {
+                  // Its range goes back to the others, and it stops.
+                  returned.push(range);
+                  throw new Error(found.error ?? 'no part');
+                }
+                advance(await client.request<'analysisAbsorb'>({ kind: 'analysisAbsorb', part: found.part }));
+              });
+            })().catch(() => {
+              helping = Math.max(0, helping - 1);
+            }),
+          );
         }
-        progress = { done: step.done ?? 0, total: step.total };
-        const took = Math.max(1, performance.now() - before);
-        batch = Math.max(1, Math.min(200, Math.round((batch * TARGET_MS) / took)));
+      }
+      await here;
+      await Promise.all(shares);
+      // What a helper gave back after this worker had finished.
+      await work(async ([from, to]) => advance(await client.request<'analysisRange'>({ kind: 'analysisRange', from, to })));
+      if (stopping) {
+        stopped = `Stopped after ${(progress?.done ?? 0).toLocaleString('en')} of ${count(total, 'contingency', 'contingencies')}.`;
+        return;
       }
       analysis = await client.request<'analysisResult'>({ kind: 'analysisResult' });
       elapsed = performance.now() - started;
+      workers = helping + 1;
       const defaults = await client.request<'sarDefaults'>({ kind: 'sarDefaults' });
       header = {
         title: defaults?.title ?? '',
@@ -115,6 +179,7 @@
     } catch (error) {
       failed = String(error);
     } finally {
+      for (const helper of pool) helper.close();
       running = false;
     }
   }
@@ -190,7 +255,7 @@
         {#if running && progress}
           <p class="sub" role="status" data-testid="sa-progress">
             <progress max={progress.total} value={progress.done}></progress>
-            {progress.done.toLocaleString('en')} of {count(progress.total, 'contingency', 'contingencies')}
+            {progress.done.toLocaleString('en')} of {count(progress.total, 'contingency', 'contingencies')}{helping ? `, in ${helping + 1} workers` : ''}
           </p>
         {/if}
         {#if failed}<p role="alert" data-testid="sa-error">The analysis stopped: {failed}</p>{/if}
@@ -206,7 +271,7 @@
         </p>
         <p class="sub" data-testid="sa-options">
           Scenario {analysis.scenarioTime}; the imbalance taken by {SHARING[analysis.options.sharing]}, reactive limits {analysis.options.qLimits ? 'held' : 'not held'}.
-          {#if elapsed !== null}{(elapsed / 1000).toFixed(1)} s in this browser.{/if}
+          {#if elapsed !== null}{(elapsed / 1000).toFixed(1)} s in this browser{workers > 1 ? `, in ${workers} workers` : ''}.{/if}
           {#if analysis.pastLimits.length}Sharing took machines past their limits {count(analysis.pastLimits.length, 'time')}.{/if}
         </p>
         {#if analysis.stalled.length}

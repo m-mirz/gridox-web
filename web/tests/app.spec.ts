@@ -561,7 +561,31 @@ test.describe('security analysis', () => {
     await expect(page.getByTestId('sa-supplied')).toContainText('not run');
   });
 
-  test('can be stopped, and a model without contingencies has no analysis', async ({ page }) => {
+  test('is shared with other workers when there are many contingencies, and gives the same', async ({ page }) => {
+    // 45 more contingencies losing nothing, each keeping the base case's overload.
+    const many = Array.from({ length: 45 }, (_, i) => {
+      const id = `_00000000-0000-4000-8000-0000000071${i.toString().padStart(2, '0')}`;
+      return `<nc:OrdinaryContingency rdf:ID="${id}"><cim:IdentifiedObject.name>Nothing lost ${i}</cim:IdentifiedObject.name></nc:OrdinaryContingency>`;
+    }).join('\n');
+    const file = join(mkdtempSync(join(tmpdir(), 'gridox-')), 'nc_CO_many.xml');
+    writeFileSync(
+      file,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:nc="https://cim4.eu/ns/nc#" xmlns:cim="https://cim.ucaiug.io/ns#">
+${many}
+</rdf:RDF>`,
+    );
+    await input(page).setInputFiles(file);
+    const sa = page.getByTestId('security');
+    await sa.getByRole('button', { name: 'Run 49 contingencies' }).click();
+    await expect(page.getByTestId('sa-summary')).toContainText('49 contingencies: 48 solved, 1 name equipment the model lacks.');
+    await expect(page.getByTestId('sa-summary')).toContainText('1 violation in the base case, 46 violations after contingencies.');
+    if ((await page.evaluate(() => navigator.hardwareConcurrency)) > 1) {
+      await expect(page.getByTestId('sa-options')).toContainText(/in [2-4] workers/);
+    }
+  });
+
+  test('a model without contingencies has no analysis', async ({ page }) => {
     await input(page).setInputFiles(fixture('second_EQ.xml'));
     await expect(page.getByTestId('security')).toBeVisible();
     await page.getByRole('button', { name: 'Clear' }).click();
