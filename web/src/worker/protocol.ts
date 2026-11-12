@@ -356,6 +356,8 @@ export interface SarResult {
 export interface EditResult {
   error: string | null;
   changed: string[];
+  /** Files an undo removed, as the edit undone had created them. */
+  removed?: string[];
   revision?: number;
   /** An object added: its mRID. */
   id?: string;
@@ -452,6 +454,8 @@ export type Request =
   | { kind: 'editCandidates'; id: string; key: string }
   | { kind: 'editFixes'; id: string }
   | { kind: 'editApply'; revision: number; edits: unknown }
+  | { kind: 'editCounterProposal'; refused: string; responding: string | null }
+  | { kind: 'editResponders' }
   | { kind: 'loadOnly'; files: File[] }
   | { kind: 'analysisResult' }
   | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
@@ -502,6 +506,8 @@ export interface Answers {
   editCandidates: Candidate[];
   editFixes: Fixes;
   editApply: EditResult;
+  editCounterProposal: EditResult;
+  editResponders: Linked[];
   analysisResult: Analysis | null;
   analysisViolations: AnalysisViolation[];
   sarDefaults: Partial<SarHeader> | null;

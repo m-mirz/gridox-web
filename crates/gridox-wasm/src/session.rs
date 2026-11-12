@@ -2370,6 +2370,45 @@ mod tests {
     }
 
     #[test]
+    fn a_counter_proposal_refuses_a_schedule_with_a_copy_in_a_dataset_of_its_own() {
+        let mut session = with_ras();
+        let refused = e("501");
+        let random: Vec<u8> = (0..160).collect();
+        let made = session.edit_counter_proposal(&refused, None, &random);
+        assert_eq!(changed(&made), ["nc_RAS_counter-proposal.xml"]);
+        let text = session
+            .file_text("nc_RAS_counter-proposal.xml")
+            .unwrap()
+            .to_string();
+        // The header, under a new identifier; the copies, once each; the points not active.
+        assert!(text.contains("<dcterms:conformsTo rdf:resource=\"https://ap.cim4.eu/RemedialActionSchedule/2.4\"/>"), "{text}");
+        assert!(!text.contains("000000000f05"), "{text}");
+        assert_eq!(text.matches("<nc:EventTimePoint ").count(), 2, "{text}");
+        assert_eq!(
+            text.matches("<nc:EventTimePoint.isActive>false<").count(),
+            2,
+            "{text}"
+        );
+        let schedule = made["id"].as_str().unwrap();
+        let dependency = session.object(schedule)["referrers"].to_string();
+        assert!(
+            dependency.contains("RemedialActionScheduleDependency.ProposedRemedialActionSchedule"),
+            "{dependency}"
+        );
+        let old = session.object(&refused)["referrers"].to_string();
+        assert!(
+            old.contains("RemedialActionScheduleResponse.RemedialActionSchedule"),
+            "{old}"
+        );
+        // One edit: undone, the file is gone.
+        let undone = session.edit_undo();
+        assert_eq!(undone["removed"], json!(["nc_RAS_counter-proposal.xml"]));
+        assert!(session.file_text("nc_RAS_counter-proposal.xml").is_none());
+        assert!(session.object(schedule).is_null());
+        assert!(session.edit_counter_proposal(&e("502"), None, &random)["error"].is_string());
+    }
+
+    #[test]
     fn a_fix_for_a_finding_takes_it_away_and_a_stale_one_is_refused() {
         let mut session = solvable();
         session.check_file("grid_EQ.xml", GRID).unwrap();

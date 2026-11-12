@@ -663,6 +663,24 @@ test.describe('editing', () => {
     await expect(page.getByTestId('edited-files')).toContainText('2 files edited');
   });
 
+  test('RA_UC4: a schedule refused with a counter-proposal in a file of its own, undone as one', async ({ page }) => {
+    await input(page).setInputFiles([RA, RAS]);
+    // The tree has the new files once the summary counts them.
+    await expect(page.getByTestId('totals')).toContainText('from 5 files');
+    const edit = await open(page, /^Open A, proposed/);
+    await edit.getByRole('button', { name: 'Counter-propose' }).click();
+    const bar = page.getByTestId('edited-files');
+    await expect(bar).toContainText('1 file edited');
+    await expect(bar.getByRole('button', { name: 'Download nc_RAS_counter-proposal.xml' })).toBeVisible();
+    // The copy is shown: proposed, its points not active, replacing the one refused.
+    await expect(details(page).getByRole('heading', { name: 'Open A, proposed' })).toBeVisible();
+    await expect(page.getByTestId('referrers')).toContainText('RemedialActionScheduleDependency.ProposedRemedialActionSchedule');
+    await expect(page.getByTestId('totals')).toContainText('from 6 files');
+    await bar.getByRole('button', { name: 'Undo' }).click();
+    await expect(bar).toBeHidden();
+    await expect(page.getByTestId('totals')).toContainText('from 5 files');
+  });
+
   test('an object is added in its container, and one deleted after saying what goes', async ({ page }) => {
     let edit = await open(page, /^Anvil 110$/, /^Anvil 110 VoltageLevel/);
     await edit.getByLabel('Class to add').selectOption('Breaker');

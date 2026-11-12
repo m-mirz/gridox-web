@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
-  import type { Candidate, EditForm, EditResult, Fixes, ObjectFields } from '../worker/protocol';
+  import type { Candidate, EditForm, EditResult, Fixes, Linked, ObjectFields } from '../worker/protocol';
 
   /**
    * Edits to one object, in the files as written: the fixes for its findings, its fields set,
@@ -35,6 +35,9 @@
   let deleting = $state<{ objects: number; references: number; files: string[]; contained: number } | null>(null);
   let withContained = $state(false);
   let candidates = $state<Record<string, Candidate[]>>({});
+  /** RA_UC4: who answers a remedial action schedule, and with whom. */
+  let responders = $state.raw<Linked[]>([]);
+  let responding = $state('');
 
   /** A field's value as the object writes it: a reference's mRID, an enumeration's value. */
   function current(key: string): string {
@@ -56,8 +59,10 @@
       client.request<'editForm'>({ kind: 'editForm', id }),
       client.request<'editFixes'>({ kind: 'editFixes', id }),
       client.request<'editAddable'>({ kind: 'editAddable', parent: id }),
-    ]).then(([f, x, a]) => {
+      object.class === 'RemedialActionSchedule' ? client.request<'editResponders'>({ kind: 'editResponders' }) : Promise.resolve([]),
+    ]).then(([f, x, a, r]) => {
       if (!live) return;
+      responders = r;
       form = f;
       fixes = x;
       addable = a;
@@ -129,6 +134,25 @@
 <details class="edit" data-testid="edit" bind:open>
   <summary>Edit</summary>
   {#if failed}<p role="alert" data-testid="edit-error">{failed}</p>{/if}
+
+  {#if object.class === 'RemedialActionSchedule'}
+    <h4>Refuse with a counter-proposal (RA_UC4)</h4>
+    <p class="sub">
+      A dataset of its own: a response refusing this schedule, a copy of it with its event schedules and time points, not active, under new
+      mRIDs, and a dependency from the copy to this one.
+    </p>
+    <div class="row">
+      <select aria-label="Responding entity" bind:value={responding}>
+        <option value="">No responding entity</option>
+        {#each responders as r (r.id)}<option value={r.id}>{r.label ?? r.id}</option>{/each}
+      </select>
+      <button
+        type="button"
+        disabled={busy}
+        onclick={() => run(client.request<'editCounterProposal'>({ kind: 'editCounterProposal', refused: object.id, responding: responding || null }))}
+      >Counter-propose</button>
+    </div>
+  {/if}
 
   {#if fixes?.fixes.length}
     <h4>Fixes</h4>
@@ -254,5 +278,10 @@
 
   .warn {
     color: var(--warn);
+  }
+
+  .sub {
+    margin: 0 0 0.3rem;
+    color: var(--muted);
   }
 </style>

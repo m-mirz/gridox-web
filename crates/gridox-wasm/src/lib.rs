@@ -196,6 +196,25 @@ impl JsSession {
         Ok(self.0.edit_apply(revision as u64, &edits).to_string())
     }
 
+    /// RA_UC4's counter-proposal to schedule `refused`, in a new file; `random` gives the
+    /// identifiers, 16 bytes a draw.
+    #[wasm_bindgen(js_name = editCounterProposal)]
+    pub fn edit_counter_proposal(
+        &mut self,
+        refused: &str,
+        responding: Option<String>,
+        random: &[u8],
+    ) -> String {
+        self.0
+            .edit_counter_proposal(refused, responding.as_deref(), random)
+            .to_string()
+    }
+
+    #[wasm_bindgen(js_name = editResponders)]
+    pub fn edit_responders(&self) -> String {
+        self.0.edit_responders().to_string()
+    }
+
     #[wasm_bindgen(js_name = analysisRange)]
     pub fn analysis_range(&mut self, from: usize, to: usize) -> String {
         self.0.analysis_range(from, to).to_string()

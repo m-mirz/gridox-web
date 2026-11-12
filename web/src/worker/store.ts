@@ -17,7 +17,7 @@ async function directory(create: boolean): Promise<FileSystemDirectoryHandle | n
   }
 }
 
-async function names(dir: FileSystemDirectoryHandle): Promise<string[]> {
+async function storedNames(dir: FileSystemDirectoryHandle): Promise<string[]> {
   const found: string[] = [];
   // @ts-expect-error TypeScript's DOM library lacks the directory's iterator.
   for await (const name of dir.keys()) found.push(name as string);
@@ -29,7 +29,7 @@ export async function keep(files: File[]): Promise<boolean> {
   try {
     const dir = await directory(true);
     if (!dir) return false;
-    let next = (await names(dir)).length;
+    let next = (await storedNames(dir)).length;
     for (const file of files) {
       const name = `${String(next++).padStart(4, '0')}-${file.name}`;
       const handle = await dir.getFileHandle(name, { create: true });
@@ -56,7 +56,7 @@ export async function replace(files: File[]): Promise<boolean> {
   try {
     const dir = await directory(false);
     if (!dir) return false;
-    const stored = await names(dir);
+    const stored = await storedNames(dir);
     for (const file of files) {
       const name = stored.find((n) => n.replace(PREFIX, '') === file.name);
       if (!name) return false;
@@ -77,13 +77,29 @@ export async function replace(files: File[]): Promise<boolean> {
   }
 }
 
+/** The kept files of these names gone, as undoing the edit that created them leaves them. */
+export async function remove(names: string[]): Promise<boolean> {
+  try {
+    const dir = await directory(false);
+    if (!dir) return false;
+    for (const stored of await storedNames(dir)) {
+      if (names.includes(stored.replace(PREFIX, ''))) await dir.removeEntry(stored);
+    }
+    return true;
+  } catch (error) {
+    console.warn('The files could not be kept in this browser:', error);
+    await forget().catch(() => {});
+    return false;
+  }
+}
+
 /** What is kept, in the order it came, under the names it came with. */
 export async function kept(): Promise<File[]> {
   try {
     const dir = await directory(false);
     if (!dir) return [];
     const files: File[] = [];
-    for (const name of await names(dir)) {
+    for (const name of await storedNames(dir)) {
       const file = await (await dir.getFileHandle(name)).getFile();
       files.push(new File([file], name.replace(PREFIX, '')));
     }

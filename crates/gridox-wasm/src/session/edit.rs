@@ -23,7 +23,8 @@ pub(super) struct Texts {
     /// Each file's lines and index, built for the first edit after a change.
     built: Option<Vec<(LineIndex, Index)>>,
     /// The texts each edit replaced, the last last: a file is edited while an edit here changed it.
-    history: Vec<Vec<(String, String)>>,
+    /// `None`: the edit created the file.
+    history: Vec<Vec<(String, Option<String>)>>,
     /// Counts the changes, so that an edit offered for one state is not applied to another.
     revision: u64,
 }
@@ -78,7 +79,7 @@ impl Session {
         let mut before = Vec::new();
         for (name, changes) in &edits {
             if let Some((_, text)) = self.texts.files.iter_mut().find(|(n, _)| n == name) {
-                before.push((name.clone(), text.clone()));
+                before.push((name.clone(), Some(text.clone())));
                 *text = apply(text, changes);
             }
         }
@@ -138,20 +139,280 @@ impl Session {
             .map(|(_, t)| t.as_str())
     }
 
-    /// The last edit undone.
+    /// The last edit undone; a file it created, gone.
     pub fn edit_undo(&mut self) -> Value {
         let Some(before) = self.texts.history.pop() else {
             return Self::error("nothing to undo");
         };
-        let mut changed = Vec::new();
+        let (mut changed, mut removed) = (Vec::new(), Vec::new());
         for (name, text) in before {
-            if let Some((_, now)) = self.texts.files.iter_mut().find(|(n, _)| *n == name) {
-                *now = text;
-                changed.push(name);
+            match text {
+                Some(text) => {
+                    if let Some((_, now)) = self.texts.files.iter_mut().find(|(n, _)| *n == name) {
+                        *now = text;
+                        changed.push(name);
+                    }
+                }
+                None => {
+                    self.texts.files.retain(|(n, _)| *n != name);
+                    self.files.retain(
+                        |f| !matches!(f, super::FileOutcome::Loaded { name: n, .. } if *n == name),
+                    );
+                    removed.push(name);
+                }
             }
         }
         self.reload();
-        json!({ "error": null, "changed": changed, "revision": self.texts.revision })
+        json!({ "error": null, "changed": changed, "removed": removed, "revision": self.texts.revision })
+    }
+
+    /// The objects that can answer a remedial action schedule: the system operators loaded.
+    pub fn edit_responders(&self) -> Value {
+        let reg = type_registry();
+        let mut found: Vec<(&str, &cimmodel::Element)> = self
+            .dataset
+            .entries
+            .iter()
+            .filter(|(_, e)| {
+                e.types()
+                    .any(|c| reg.chain(c).iter().any(|a| a.local == "SystemOperator"))
+            })
+            .map(|(id, e)| (id.as_str(), e))
+            .collect();
+        found.sort_by_key(|(id, _)| *id);
+        Value::Array(found.into_iter().map(|(id, _)| self.linked(id)).collect())
+    }
+
+    /// `edits` applied to the texts alone, for an edit of several steps; the indexes built again.
+    fn stage(&mut self, edits: Owned) {
+        for (name, changes) in &edits {
+            if let Some((_, text)) = self.texts.files.iter_mut().find(|(n, _)| n == name) {
+                *text = apply(text, changes);
+            }
+        }
+        self.texts.built = None;
+        self.build_texts();
+    }
+
+    /// RA_UC4: a counter-proposal to the remedial action schedule `refused`, in a dataset of its
+    /// own, as cimoxide's `test_edits.py` builds it: a response refusing the schedule, a copy of
+    /// it, its event schedules and their time points with new mRIDs (the points not active), and a
+    /// dependency from the copy to the refused one. The new file takes the namespaces and the header
+    /// of the file defining `refused`, under a new identifier. One edit, undone as one.
+    pub fn edit_counter_proposal(
+        &mut self,
+        refused: &str,
+        responding: Option<&str>,
+        random: &[u8],
+    ) -> Value {
+        if self.dataset.entries.get(refused).map(|e| e.local_name())
+            != Some("RemedialActionSchedule")
+        {
+            return Self::error(format!("`{refused}` is no RemedialActionSchedule"));
+        }
+        self.build_texts();
+        // The RAO's proposal: of the files defining the schedule, the one where it is proposed. A
+        // proposal and what was agreed of it may define it alike.
+        let built = self.texts.built.as_ref().expect("built");
+        let defining: Vec<usize> = (0..built.len())
+            .filter(|&i| {
+                built[i]
+                    .1
+                    .elements
+                    .iter()
+                    .any(|e| e.mrid == refused && e.id_kind == Some(IdKind::Id))
+            })
+            .collect();
+        let proposed = defining.iter().copied().find(|&i| {
+            built[i]
+                .1
+                .elements
+                .iter()
+                .filter(|e| e.mrid == refused)
+                .any(|e| {
+                    e.fields.iter().any(|f| {
+                        f.key() == "RemedialActionSchedule.statusKind"
+                            && f.resource
+                                .as_ref()
+                                .is_some_and(|(v, _)| v.ends_with(".proposed"))
+                    })
+                })
+        });
+        let Some(at) = proposed.or(defining.first().copied()) else {
+            return Self::error(format!("no file defines `{refused}`"));
+        };
+        let like = self.texts.files[at].0.clone();
+        // What the schedule holds: its event schedules, and their time points.
+        let referring = |class: &str, key: &str, to: &[String]| -> Vec<String> {
+            let mut found: Vec<String> = self
+                .dataset
+                .by_type
+                .get(class)
+                .into_iter()
+                .flatten()
+                .filter(|id| {
+                    self.dataset.entries[*id]
+                        .get_ref(key)
+                        .is_some_and(|t| to.iter().any(|x| x == cimview::mrid_of(t)))
+                })
+                .cloned()
+                .collect();
+            found.sort();
+            found
+        };
+        let events = referring(
+            "nc:EventSchedule",
+            "EventSchedule.RemedialActionSchedule",
+            &[refused.to_string()],
+        );
+        let points = referring("nc:EventTimePoint", "EventTimePoint.EventSchedule", &events);
+        let mut draws = random
+            .chunks_exact(16)
+            .map(|c| <[u8; 16]>::try_from(c).expect("16"));
+        let mut exhausted = false;
+        let mut next = || {
+            draws.next().unwrap_or_else(|| {
+                exhausted = true;
+                [0; 16]
+            })
+        };
+
+        // The new file: the proposal's prolog and root, and its header under a new identifier.
+        let text = self.file_text(&like).unwrap_or_default().to_string();
+        let (lines, index) = &self.texts.built.as_ref().expect("built")[at];
+        let Some(root_end) = text
+            .find("<rdf:RDF")
+            .and_then(|s| text[s..].find('>').map(|e| s + e + 1))
+        else {
+            return Self::error(format!("{like} has no rdf:RDF root"));
+        };
+        let header = index
+            .elements
+            .iter()
+            .find(|e| matches!(cimview::index::local(&e.qname), "Dataset" | "FullModel"));
+        let id = ed::uuid(next());
+        let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+        let header_text = header.map_or(String::new(), |h| {
+            let (s, e) = (
+                lines.offset(&text, h.full.start),
+                lines.offset(&text, h.full.end),
+            );
+            let indent = text[..s].rsplit_once('\n').map_or("", |(_, i)| i);
+            let old = h.mrid.trim_start_matches("urn:uuid:");
+            format!("{indent}{}{eol}", text[s..e].replace(old, &id))
+        });
+        let new_text = format!("{}{eol}{header_text}</rdf:RDF>{eol}", &text[..root_end]);
+        let stem = like.trim_end_matches(".xml");
+        let mut name = format!("{stem}_counter-proposal.xml");
+        let mut n = 2;
+        while self.texts.files.iter().any(|(f, _)| *f == name) {
+            name = format!("{stem}_counter-proposal_{n}.xml");
+            n += 1;
+        }
+        let before: Vec<(String, String)> = self.texts.files.clone();
+        let undo = |s: &mut Self| {
+            s.texts.files = before.clone();
+            s.texts.built = None;
+        };
+        self.texts.files.push((name.clone(), new_text));
+        self.texts.built = None;
+        self.build_texts();
+
+        // The copies, their points not active.
+        let ids: Vec<&str> = std::iter::once(refused)
+            .chain(events.iter().map(String::as_str))
+            .chain(points.iter().map(String::as_str))
+            .collect();
+        let copied = match ed::copy(
+            &self.edit_files(),
+            &ids,
+            Some(&like),
+            Some(&name),
+            &mut next,
+        ) {
+            Ok(c) => (owned(c.edits), c.ids),
+            Err(e) => {
+                undo(self);
+                return Self::error(e);
+            }
+        };
+        let (edits, renamed) = copied;
+        self.stage(edits);
+        let new_of = |old: &str| {
+            renamed
+                .iter()
+                .find(|(o, _)| o == old)
+                .map(|(_, n)| n.clone())
+                .unwrap_or_default()
+        };
+        let schedule = new_of(refused);
+        for point in &points {
+            match ed::set_field(
+                &self.edit_files(),
+                &name,
+                &new_of(point),
+                "EventTimePoint.isActive",
+                "false",
+            )
+            .map(owned)
+            {
+                Ok(e) => self.stage(e),
+                Err(e) => {
+                    undo(self);
+                    return Self::error(e);
+                }
+            }
+        }
+        // The response, and the dependency.
+        let mut response = vec![
+            ("RemedialActionScheduleResponse.kind", "refused"),
+            (
+                "RemedialActionScheduleResponse.rejectionReasonKind",
+                "madeAlternative",
+            ),
+            (
+                "RemedialActionScheduleResponse.RemedialActionSchedule",
+                refused,
+            ),
+        ];
+        if let Some(r) = responding.filter(|r| !r.is_empty()) {
+            response.push(("RemedialActionScheduleResponse.RespondingEntity", r));
+        }
+        let dependency = [
+            (
+                "RemedialActionScheduleDependency.ProposedRemedialActionSchedule",
+                schedule.as_str(),
+            ),
+            (
+                "RemedialActionScheduleDependency.ReplacedRemedialActionSchedule",
+                refused,
+            ),
+        ];
+        for (class, values) in [
+            ("RemedialActionScheduleResponse", &response[..]),
+            ("RemedialActionScheduleDependency", &dependency[..]),
+        ] {
+            match ed::create(&self.edit_files(), &name, class, values, &mut next)
+                .map(|a| owned(a.edits))
+            {
+                Ok(e) => self.stage(e),
+                Err(e) => {
+                    undo(self);
+                    return Self::error(e);
+                }
+            }
+        }
+        if exhausted {
+            undo(self);
+            return Self::error("not enough random bytes for the identifiers");
+        }
+        self.files.push(super::FileOutcome::Loaded {
+            name: name.clone(),
+            objects: ids.len() + 2,
+        });
+        self.texts.history.push(vec![(name.clone(), None)]);
+        self.reload();
+        json!({ "error": null, "changed": [name], "revision": self.texts.revision, "id": schedule })
     }
 
     /// Rename mRID `old` to `new` in every file.
