@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Three more contingencies on grid_EQ.xml and grid_state.xml: one losing nothing, which keeps
+     the base case's overload on Anvil-Birch; one losing Load B, which lifts it; one losing a unit
+     the model lacks. -->
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:nc="https://cim4.eu/ns/nc#"
+    xmlns:cim="https://cim.ucaiug.io/ns#"
+    xmlns:dcat="http://www.w3.org/ns/dcat#" >
+  <dcat:Dataset rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f07">
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/Contingency/2.4"/>
+    <dcterms:publisher rdf:resource="https://energy.referencedata.eu/test/party/South"/>
+    <dcterms:rightsHolder>South TSO</dcterms:rightsHolder>
+  </dcat:Dataset>
+  <nc:OrdinaryContingency rdf:ID="_00000000-0000-4000-8000-000000000701">
+    <cim:IdentifiedObject.name>Nothing lost</cim:IdentifiedObject.name>
+  </nc:OrdinaryContingency>
+  <nc:OrdinaryContingency rdf:ID="_00000000-0000-4000-8000-000000000702">
+    <cim:IdentifiedObject.name>Loss of Load B</cim:IdentifiedObject.name>
+  </nc:OrdinaryContingency>
+  <cim:ContingencyEquipment rdf:ID="_00000000-0000-4000-8000-000000000703">
+    <cim:ContingencyElement.Contingency rdf:resource="#_00000000-0000-4000-8000-000000000702"/>
+    <cim:ContingencyEquipment.Equipment rdf:resource="#_00000000-0000-4000-8000-000000000a31"/>
+    <cim:ContingencyEquipment.contingentStatus rdf:resource="https://cim.ucaiug.io/ns#ContingencyEquipmentStatusKind.outOfService"/>
+  </cim:ContingencyEquipment>
+  <nc:ExceptionalContingency rdf:ID="_00000000-0000-4000-8000-000000000704">
+    <cim:IdentifiedObject.name>Loss of Unit X</cim:IdentifiedObject.name>
+  </nc:ExceptionalContingency>
+  <cim:ContingencyEquipment rdf:ID="_00000000-0000-4000-8000-000000000705">
+    <cim:ContingencyElement.Contingency rdf:resource="#_00000000-0000-4000-8000-000000000704"/>
+    <cim:ContingencyEquipment.Equipment rdf:resource="#_00000000-0000-4000-8000-000000000799"/>
+    <cim:ContingencyEquipment.contingentStatus rdf:resource="https://cim.ucaiug.io/ns#ContingencyEquipmentStatusKind.outOfService"/>
+  </cim:ContingencyEquipment>
+</rdf:RDF>

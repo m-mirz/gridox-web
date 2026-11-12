@@ -32,13 +32,21 @@ export class WorkerClient {
     });
   }
 
+  /** Ends the worker, and with it what was asked of it. */
+  close() {
+    this.worker.onerror = null;
+    this.worker.terminate();
+    for (const { reject } of this.pending.values()) reject(new Error('The worker was closed'));
+    this.pending.clear();
+  }
+
   private launch(): WorkerLike {
     const worker = this.start();
     worker.onmessage = ({ data }) => {
       const pending = this.pending.get(data.id);
       if (!pending) return;
       this.pending.delete(data.id);
-      if (data.ok) pending.resolve(JSON.parse(data.json) as never);
+      if (data.ok) pending.resolve((data.files ?? JSON.parse(data.json)) as never);
       else pending.reject(new Error(data.error));
     };
     worker.onerror = (event) => {

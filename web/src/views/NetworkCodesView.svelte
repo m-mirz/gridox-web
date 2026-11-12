@@ -46,7 +46,9 @@
       assessed = a;
       actions = r;
       schedules = s;
-      tab = c.length ? 'contingencies' : a.length ? 'assessed' : r.length ? 'actions' : 'schedules';
+      // The tab chosen stays while it has rows: a new file must not take it away.
+      const rows = { contingencies: c.length, assessed: a.length, actions: r.length, schedules: s.groups.length };
+      if (!rows[tab]) tab = c.length ? 'contingencies' : a.length ? 'assessed' : r.length ? 'actions' : 'schedules';
       const together = s.exclusive.find((e) => e.together.length);
       if (together) timeAlong(together);
       else {

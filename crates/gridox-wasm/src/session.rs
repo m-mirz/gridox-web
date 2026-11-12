@@ -14,6 +14,11 @@ use cimview::{Locations, mrid_of};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod power_flow;
+mod security;
+
+pub use power_flow::Options as PowerFlowOptions;
+
 /// What became of one file given to [`Session::add_file`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -107,6 +112,8 @@ pub struct Session {
     /// the next.
     gathering: Facts,
     facts: Option<Facts>,
+    /// A security analysis under way or done; gone when a file comes in.
+    analysis: Option<security::Analysis>,
 }
 
 struct Views {
@@ -155,6 +162,7 @@ impl Session {
                     self.views = None;
                     self.validated = None;
                     self.facts = None;
+                    self.analysis = None;
                     FileOutcome::Loaded {
                         name: name.to_string(),
                         objects,
@@ -1982,6 +1990,262 @@ mod tests {
         assert_eq!(dependency["kind"], "exclusive");
         assert_eq!(dependency["group"]["label"], "Breaker A either way");
         assert_eq!(dependency["with"][0]["label"], "Keep Breaker A closed");
+    }
+
+    const STATE: &str = include_str!("../../../web/tests/fixtures/grid_state.xml");
+    const SV: &str = include_str!("../../../web/tests/fixtures/grid_SV.xml");
+
+    fn solvable() -> Session {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        session.add_file("grid_state.xml", STATE);
+        session.add_file("grid_SV.xml", SV);
+        session
+    }
+
+    #[test]
+    fn a_power_flow_says_what_it_solved_and_how_far_from_the_sv() {
+        let flow = solvable().power_flow(PowerFlowOptions::default());
+        assert_eq!(flow["error"], Value::Null);
+        assert_eq!(
+            flow["options"],
+            json!({ "sharing": "reference", "qLimits": true })
+        );
+        let component = &flow["components"][0];
+        assert_eq!(component["status"], "converged");
+        assert_eq!(component["nodes"], 2);
+        assert_eq!(component["references"][0]["label"], "Anvil 110");
+        let birch = flow["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Birch 110")
+            .unwrap();
+        assert_eq!(birch["sv"], json!({ "kV": 100.0, "deg": -2.0 }));
+        assert!((birch["kV"].as_f64().unwrap() - 110.555).abs() < 0.01);
+        assert!((birch["dvPercent"].as_f64().unwrap() - 10.555).abs() < 0.01);
+        assert_eq!(birch["at"], "_00000000-0000-4000-8000-000000000a02");
+        assert_eq!(component["sv"]["dvPercent"], birch["dvPercent"]);
+    }
+
+    #[test]
+    fn a_power_flow_puts_voltages_and_loadings_where_the_grid_draws_them() {
+        let flow = solvable().power_flow(PowerFlowOptions::default());
+        let overlay = &flow["overlay"];
+        assert_eq!(
+            overlay["nodes"]["_00000000-0000-4000-8000-000000000a02"]["min"],
+            1.005
+        );
+        // A connectivity node has its topological node's voltage.
+        assert_eq!(
+            overlay["voltages"]["_00000000-0000-4000-8000-000000000a23"],
+            overlay["voltages"]["_00000000-0000-4000-8000-000000000601"]
+        );
+        let line = &overlay["flows"][LINE];
+        assert!((line["loading"].as_f64().unwrap() - 133.14).abs() < 0.1);
+        assert_eq!(line["ends"][1]["p"], -50.0);
+        let violation = &flow["violations"][0];
+        assert_eq!(violation["equipment"]["label"], "Anvil-Birch");
+        assert_eq!(violation["kind"], "PATL");
+        assert_eq!(violation["limitAmps"], 200.0);
+    }
+
+    #[test]
+    fn a_node_with_no_angle_reference_is_counted_and_not_solved() {
+        let mut session = solvable();
+        session.add_file(
+            "lone.xml",
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:TopologicalNode rdf:ID="_00000000-0000-4000-8000-000000000631">
+    <cim:IdentifiedObject.name>Lone</cim:IdentifiedObject.name>
+    <cim:TopologicalNode.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+  </cim:TopologicalNode>
+</rdf:RDF>"##,
+        );
+        let flow = session.power_flow(PowerFlowOptions::default());
+        let statuses: Vec<&str> = flow["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["status"].as_str().unwrap())
+            .collect();
+        assert!(statuses.contains(&"converged"), "{statuses:?}");
+        assert!(statuses.contains(&"noReference"), "{statuses:?}");
+        let lone = flow["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["label"] == "Lone")
+            .unwrap();
+        assert_eq!(lone["pu"], Value::Null);
+    }
+
+    #[test]
+    fn a_model_without_its_state_says_why_nothing_was_solved() {
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        let flow = session.power_flow(PowerFlowOptions::default());
+        assert!(
+            flow["error"].as_str().is_some_and(|e| !e.is_empty()),
+            "{flow}"
+        );
+    }
+
+    const MORE: &str = include_str!("../../../web/tests/fixtures/nc_CO_more.xml");
+
+    /// The small grid with its state and four contingencies, its analysis run `batch` at a time.
+    fn analysed(batch: usize) -> Session {
+        let mut session = solvable();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.add_file("nc_CO_more.xml", MORE);
+        assert_eq!(
+            session.analysis_start(PowerFlowOptions::default()),
+            json!({ "error": null, "total": 4 })
+        );
+        loop {
+            let step = session.analysis_step(batch);
+            assert_eq!(step["error"], Value::Null);
+            if step["done"] == step["total"] {
+                return session;
+            }
+        }
+    }
+
+    fn header() -> gridoxide::security_analysis::SarHeader {
+        gridoxide::security_analysis::SarHeader {
+            title: "t".into(),
+            description: "d".into(),
+            publisher: "https://example.org/p".into(),
+            is_version_of: "https://example.org/m".into(),
+            rights_holder: "r".into(),
+            generated_at: "2026-11-12T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn an_analysis_in_batches_is_the_analysis_in_one() {
+        let mut whole = analysed(10);
+        for batch in [1, 3] {
+            let mut parts = analysed(batch);
+            assert_eq!(parts.analysis_result(), whole.analysis_result(), "{batch}");
+            assert_eq!(parts.sar(&header()), whole.sar(&header()), "{batch}");
+        }
+    }
+
+    /// A session holding the analysed set, its analysis started.
+    fn started() -> Session {
+        let mut session = solvable();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.add_file("nc_CO_more.xml", MORE);
+        session.analysis_start(PowerFlowOptions::default());
+        session
+    }
+
+    #[test]
+    fn parts_from_other_workers_merge_in_any_order_into_the_analysis_in_one() {
+        let mut whole = analysed(10);
+        let mut main = started();
+        let mut helper = started();
+        // As it crosses from worker to worker: as text.
+        let mut part = |from, to| -> Value {
+            let found = helper.analysis_part(from, to);
+            assert_eq!(found["error"], Value::Null);
+            serde_json::from_str(&found["part"].to_string()).unwrap()
+        };
+        // Before this worker has a base case of its own, a part waits for it.
+        let late = main.analysis_absorb(&part(2, 4));
+        assert_eq!(late["done"], 2);
+        assert_eq!(main.analysis_result(), Value::Null);
+        main.analysis_range(1, 2);
+        main.analysis_absorb(&part(0, 1));
+        assert_eq!(main.analysis_result(), whole.analysis_result());
+        assert_eq!(main.sar(&header()), whole.sar(&header()));
+    }
+
+    #[test]
+    fn an_analysis_says_what_each_contingency_gives() {
+        let result = analysed(2).analysis_result();
+        assert_eq!(result["total"], 4);
+        assert_eq!(result["solved"], 3);
+        assert_eq!(result["absent"][0]["label"], "Loss of Unit X");
+        assert_eq!(result["baseViolations"], 1);
+        assert_eq!(result["violations"], 1);
+        let rows = result["contingencies"].as_array().unwrap();
+        let nothing = rows.iter().find(|c| c["label"] == "Nothing lost").unwrap();
+        assert_eq!(nothing["outcome"], "solved");
+        assert_eq!(nothing["violations"], 1);
+        assert!((nothing["worst"].as_f64().unwrap() - 133.14).abs() < 0.1);
+        let load = rows
+            .iter()
+            .find(|c| c["label"] == "Loss of Load B")
+            .unwrap();
+        assert_eq!(load["violations"], 0);
+        assert_eq!(load["equipment"][0]["label"], "Load B");
+        // The worst first.
+        assert_eq!(rows[0]["label"], "Nothing lost");
+        let line = &result["elements"][0];
+        assert_eq!(line["equipment"]["label"], "Anvil-Birch");
+        assert_eq!(line["contingencies"], 1);
+        assert_eq!(line["worstContingency"]["label"], "Nothing lost");
+        assert!(line["base"].as_f64().is_some());
+        assert_eq!(
+            result["requires"],
+            json!([
+                "urn:uuid:00000000-0000-4000-8000-000000000f03",
+                "urn:uuid:00000000-0000-4000-8000-000000000f07"
+            ])
+        );
+    }
+
+    #[test]
+    fn an_analysis_lists_the_violations_of_a_contingency_or_an_element() {
+        let session = analysed(4);
+        let base = session.analysis_violations(None, None);
+        assert_eq!(base.as_array().unwrap().len(), 1);
+        assert_eq!(base[0]["contingency"], Value::Null);
+        assert_eq!(base[0]["limit"]["label"], "Anvil-Birch PATL");
+        let nothing =
+            session.analysis_violations(Some("_00000000-0000-4000-8000-000000000701"), None);
+        assert_eq!(nothing[0]["equipment"]["label"], "Anvil-Birch");
+        let at = session.analysis_violations(None, Some("_00000000-0000-4000-8000-000000000a44"));
+        assert_eq!(at.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_sar_is_written_once_the_analysis_is_done_and_its_header_offered() {
+        let mut session = analysed(4);
+        let defaults = session.sar_defaults();
+        assert_eq!(
+            defaults["publisher"],
+            "https://energy.referencedata.eu/test/party/South"
+        );
+        assert_eq!(defaults["rightsHolder"], "South TSO");
+        let sar = session.sar(&header()).unwrap();
+        assert!(sar.contains("SecurityAnalysisResult"), "{sar}");
+        assert!(sar.contains("urn:uuid:00000000-0000-4000-8000-000000000f07"));
+        // Its results, read back with the model, are the analysis's own.
+        session.add_file("sar.xml", &sar);
+        let results = session.sar_results();
+        let rows = results.as_array().unwrap();
+        assert!(!rows.is_empty());
+        assert!(
+            rows.iter().all(|r| r["terminal"]["missing"].is_null()),
+            "{results}"
+        );
+    }
+
+    #[test]
+    fn a_new_file_ends_the_analysis_and_without_contingencies_there_is_none() {
+        let mut session = analysed(4);
+        session.add_file("lone.xml", r##"<?xml version="1.0"?><rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><cim:Breaker rdf:ID="_00000000-0000-4000-8000-000000000632"/></rdf:RDF>"##);
+        assert_eq!(session.analysis_result(), Value::Null);
+        let mut bare = solvable();
+        assert!(
+            bare.analysis_start(PowerFlowOptions::default())["error"]
+                .as_str()
+                .is_some()
+        );
     }
 
     const RAS: &str = include_str!("../../../web/tests/fixtures/nc_RAS.xml");

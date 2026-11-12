@@ -2,7 +2,7 @@
 
 mod session;
 
-pub use session::{Checks, ClassCount, FileOutcome, Session, Summary};
+pub use session::{Checks, ClassCount, FileOutcome, PowerFlowOptions, Session, Summary};
 
 use wasm_bindgen::prelude::*;
 
@@ -89,6 +89,90 @@ impl JsSession {
     #[wasm_bindgen(js_name = assessedElements)]
     pub fn assessed_elements(&mut self) -> String {
         self.0.assessed_elements().to_string()
+    }
+
+    /// A power flow, the imbalance taken by `sharing` (`reference`, `capability` or `equal`), with
+    /// reactive limits held if `q_limits`.
+    #[wasm_bindgen(js_name = powerFlow)]
+    pub fn power_flow(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+        let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
+        let options = PowerFlowOptions { sharing, q_limits };
+        Ok(self.0.power_flow(options).to_string())
+    }
+
+    /// Readies a security analysis of the contingencies loaded; see [`Session::analysis_start`].
+    #[wasm_bindgen(js_name = analysisStart)]
+    pub fn analysis_start(&mut self, sharing: &str, q_limits: bool) -> Result<String, JsError> {
+        let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
+        Ok(self
+            .0
+            .analysis_start(PowerFlowOptions { sharing, q_limits })
+            .to_string())
+    }
+
+    #[wasm_bindgen(js_name = analysisStep)]
+    pub fn analysis_step(&mut self, count: usize) -> String {
+        self.0.analysis_step(count).to_string()
+    }
+
+    #[wasm_bindgen(js_name = analysisRange)]
+    pub fn analysis_range(&mut self, from: usize, to: usize) -> String {
+        self.0.analysis_range(from, to).to_string()
+    }
+
+    /// The contingencies `from..to` analysed for another worker: `{ error, part }`.
+    #[wasm_bindgen(js_name = analysisPart)]
+    pub fn analysis_part(&mut self, from: usize, to: usize) -> String {
+        self.0.analysis_part(from, to).to_string()
+    }
+
+    /// A part from [`JsSession::analysis_part`] of another worker, as JSON, merged in.
+    #[wasm_bindgen(js_name = analysisAbsorb)]
+    pub fn analysis_absorb(&mut self, part: &str) -> Result<String, JsError> {
+        let part: serde_json::Value = serde_json::from_str(part)?;
+        Ok(self.0.analysis_absorb(&part).to_string())
+    }
+
+    #[wasm_bindgen(js_name = analysisResult)]
+    pub fn analysis_result(&mut self) -> String {
+        self.0.analysis_result().to_string()
+    }
+
+    #[wasm_bindgen(js_name = analysisViolations)]
+    pub fn analysis_violations(
+        &self,
+        contingency: Option<String>,
+        terminal: Option<String>,
+    ) -> String {
+        self.0
+            .analysis_violations(contingency.as_deref(), terminal.as_deref())
+            .to_string()
+    }
+
+    #[wasm_bindgen(js_name = sarDefaults)]
+    pub fn sar_defaults(&self) -> String {
+        self.0.sar_defaults().to_string()
+    }
+
+    /// The finished analysis as a SAR, its header given as JSON: `title`, `description`,
+    /// `publisher`, `isVersionOf`, `rightsHolder`, `generatedAt`.
+    pub fn sar(&self, header: &str) -> Result<String, JsError> {
+        let h: serde_json::Value = serde_json::from_str(header)?;
+        let text = |key: &str| h[key].as_str().unwrap_or_default().to_string();
+        let header = gridoxide::security_analysis::SarHeader {
+            title: text("title"),
+            description: text("description"),
+            publisher: text("publisher"),
+            is_version_of: text("isVersionOf"),
+            rights_holder: text("rightsHolder"),
+            generated_at: text("generatedAt"),
+        };
+        self.0.sar(&header).map_err(|e| JsError::new(&e))
+    }
+
+    #[wasm_bindgen(js_name = sarResults)]
+    pub fn sar_results(&self) -> String {
+        self.0.sar_results().to_string()
     }
 
     pub fn schedules(&mut self) -> String {

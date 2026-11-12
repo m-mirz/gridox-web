@@ -4,6 +4,8 @@
   import {
     choice,
     count,
+    flowLines,
+    flowOf,
     type Grid,
     gridElements,
     gridSummary,
@@ -18,6 +20,7 @@
   } from '../grid/model';
   import { stylesheet } from '../grid/style';
   import type { WorkerClient } from '../worker/client';
+  import type { FlowOverlay } from '../worker/protocol';
   import type { Info } from './Details.svelte';
 
   let {
@@ -25,6 +28,7 @@
     version,
     findingsVersion,
     validated,
+    flow = null,
     onselect,
   }: {
     client: WorkerClient;
@@ -33,6 +37,8 @@
     /** Changes when the findings do. */
     findingsVersion: number;
     validated: boolean;
+    /** A power flow of the model, to colour the grid by. */
+    flow?: FlowOverlay | null;
     /** What is selected here, with the object it stands for; `null` when nothing is. */
     onselect: (selection: { id: string | null; info: Info } | null) => void;
   } = $props();
@@ -51,6 +57,8 @@
   let loaded = $state(0);
   /** Whether the grid shown has the findings: until it is asked again, it says nothing of them. */
   let withFindings = $state(false);
+  /** What the scene is coloured by, once there is a power flow. */
+  let colourBy = $state<'voltage' | 'flow'>('voltage');
 
   let cy: Core | undefined;
   /** The layout picked for the grid and for substations: a layout's id, or `auto`. */
@@ -74,6 +82,7 @@
           heading: n.label || n.id,
           sub: `${n.kind}${n.region ? ` · ${n.region}` : ''}${kV}`,
           table: Object.entries(n.equipment).sort((a, b) => b[1] - a[1]),
+          lines: flow ? flowLines(n.id, flow) : [],
           actions: n.kind === 'Substation' ? [{ label: 'Show inside', run: () => enter(n.id) }] : [],
         },
       };
@@ -86,7 +95,7 @@
       info: {
         heading: e.label,
         sub: `${e.class}${e.kV !== null ? ` · ${e.kV} kV` : ''}`,
-        lines: [`${end(e.source)} — ${end(e.target)}`],
+        lines: [`${end(e.source)} — ${end(e.target)}`, ...(flow ? flowLines(e.id.split('#')[0], flow) : [])],
       },
     };
   }
@@ -117,7 +126,7 @@
       info: {
         heading: it.label,
         sub: `${it.class}${level ? ` · ${level}` : ''}${state ? ` · ${state}` : ''}`,
-        lines: it.far.length ? [`To ${it.far.map((f) => f.label || f.id).join(', ')}`] : [],
+        lines: [...(it.far.length ? [`To ${it.far.map((f) => f.label || f.id).join(', ')}`] : []), ...(flow ? flowLines(it.id, flow) : [])],
         actions: it.far
           .filter((f) => f.kind === 'Substation')
           .map((f) => ({ label: `Show ${f.label || f.id}`, run: () => enter(f.id) })),
@@ -234,7 +243,41 @@
     });
     cy.on('dbltap', 'node, edge', (event) => open(event.target as Target));
     highlighting = false;
+    paint();
   }
+
+  /**
+   * Colours the scene by the power flow, or as drawn: each element keeps its own label as `base`,
+   * and a power flow adds a line to it, on an edge its own label.
+   */
+  function paint() {
+    if (!cy) return;
+    const on = flow && colourBy === 'flow' ? flow : null;
+    cy.batch(() => {
+      cy!.elements().forEach((el) => {
+        if (el.data('base') === undefined) el.data('base', el.data('label') ?? '');
+        const base = el.data('base') as string;
+        const found = on ? flowOf(el.id(), el.data('kind') as string | undefined, on) : null;
+        if (on && el.data('kind') !== 'group' && !el.id().startsWith('t:')) el.data('pf', found?.band ?? 'none');
+        else el.removeData('pf');
+        if (el.group() === 'edges') {
+          if (found) el.data('flowLabel', found.text);
+          else el.removeData('flowLabel');
+        } else el.data('label', found ? (base ? `${base}\n${found.text}` : found.text) : base);
+      });
+    });
+  }
+
+  // A power flow comes, goes, or the colouring changes.
+  $effect(() => {
+    if (flow) untrack(() => (colourBy = 'flow'));
+    else untrack(() => (colourBy = 'voltage'));
+  });
+  $effect(() => {
+    void flow;
+    void colourBy;
+    untrack(paint);
+  });
 
   function changeLayout() {
     if (inside) chosen.inside = layout;
@@ -349,9 +392,11 @@
       }
       for (const el of elements) {
         const at = cy.getElementById(el.data.id as string);
+        at.removeData('base');
         at.data(el.data);
         if (typeof el.classes === 'string') at.classes(el.classes);
       }
+      paint();
     });
   });
 
@@ -400,6 +445,12 @@
         <option value="auto">Automatic</option>
       </select>
     {/if}
+    {#if flow}
+      <select aria-label="Colour by" bind:value={colourBy}>
+        <option value="flow">Power flow</option>
+        <option value="voltage">Voltage level</option>
+      </select>
+    {/if}
     {#if highlighting}
       <button type="button" onclick={clearHighlight}>Clear highlight</button>
     {/if}
@@ -416,6 +467,14 @@
     <p data-testid="no-grid">These files hold no substations to draw. The objects are in the tree.</p>
   {:else}
     <div class="graph" bind:this={container} data-testid="graph"></div>
+    {#if flow && colourBy === 'flow'}
+      <p class="legend" data-testid="flow-legend">
+        <span class="key ok"></span> within 5 % of nominal, loaded below 80 %
+        <span class="key warn"></span> within 10 %, up to its limit
+        <span class="key bad"></span> beyond
+        <span class="key none"></span> not solved, or no limit
+      </p>
+    {/if}
   {/if}
 </section>
 
@@ -463,5 +522,37 @@
   p {
     margin: 1rem;
     color: var(--muted);
+  }
+
+  p.legend {
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem;
+  }
+
+  .key {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-left: 0.5rem;
+    border-radius: 50%;
+    vertical-align: middle;
+  }
+
+  .key.ok {
+    background: var(--accent);
+  }
+
+  .key.warn {
+    background: var(--warning);
+  }
+
+  .key.bad {
+    background: var(--violation);
+  }
+
+  .key.none {
+    background: var(--muted);
   }
 </style>

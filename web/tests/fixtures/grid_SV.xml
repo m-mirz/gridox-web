@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- grid_EQ.xml's published state, with Anvil as the angle reference. Birch's voltage is made
+     up, a little off what the line gives, to compare with. -->
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <md:FullModel rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f08">
+    <md:Model.created>2026-01-01T00:00:00Z</md:Model.created>
+    <md:Model.scenarioTime>2026-01-01T12:00:00Z</md:Model.scenarioTime>
+    <md:Model.profile>http://iec.ch/TC57/ns/CIM/StateVariables-EU/3.0</md:Model.profile>
+  </md:FullModel>
+  <cim:TopologicalIsland rdf:ID="_00000000-0000-4000-8000-000000000621">
+    <cim:IdentifiedObject.name>South island</cim:IdentifiedObject.name>
+    <cim:TopologicalIsland.AngleRefTopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:TopologicalIsland.TopologicalNodes rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:TopologicalIsland.TopologicalNodes rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
+  </cim:TopologicalIsland>
+  <cim:SvVoltage rdf:ID="_00000000-0000-4000-8000-000000000622">
+    <cim:SvVoltage.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:SvVoltage.v>112</cim:SvVoltage.v>
+    <cim:SvVoltage.angle>0</cim:SvVoltage.angle>
+  </cim:SvVoltage>
+  <cim:SvVoltage rdf:ID="_00000000-0000-4000-8000-000000000623">
+    <cim:SvVoltage.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
+    <cim:SvVoltage.v>100</cim:SvVoltage.v>
+    <cim:SvVoltage.angle>-2</cim:SvVoltage.angle>
+  </cim:SvVoltage>
+</rdf:RDF>

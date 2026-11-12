@@ -225,6 +225,133 @@ export interface Schedules {
   exclusive: ExclusiveActions[];
 }
 
+export type Sharing = 'reference' | 'capability' | 'equal';
+
+/** A connected component's outcome: solved, stopped short, or left unsolved as it has no angle reference or several. */
+export type ComponentStatus = 'converged' | 'maxIterations' | 'singular' | 'noReference' | 'ambiguousReference';
+
+/** A power flow of the model, by gridoxide, as its security analysis solves a base case. */
+export interface PowerFlow {
+  options: { sharing: Sharing; qLimits: boolean };
+  /** Why nothing was solved, such as a model without a topology. */
+  error: string | null;
+  components: {
+    status: ComponentStatus;
+    /** Topological nodes in it. */
+    nodes: number;
+    references: Linked[];
+    maxMismatch: number | null;
+    /** How far from the voltages the model's SV publishes, the angles aligned at its reference. */
+    sv: { dvPercent: number; dDeg: number; nodes: number } | null;
+  }[];
+  nodes: {
+    id: string;
+    label: string | null;
+    component: number | null;
+    nominalKV: number;
+    /** Absent where its component was not solved. */
+    pu: number | null;
+    kV: number | null;
+    deg: number | null;
+    sv: { kV: number; deg: number } | null;
+    dvPercent?: number;
+    dDeg?: number;
+    /** The grid node it is drawn in. */
+    at: string | null;
+  }[];
+  /** Nodes whose machines reactive limits took off voltage control. */
+  switched: Linked[];
+  /** What the machines' share of the imbalance came to; `null` when the reference took it. */
+  sharedMW: number | null;
+  pastLimits: (Linked & { mw: number; limit: number })[];
+  violations: { terminal: string; equipment: Linked | null; limit: Linked; kind: string; amps: number; limitAmps: number; percent: number }[];
+  overlay: FlowOverlay;
+}
+
+/** A power flow, by what the grid draws. */
+export interface FlowOverlay {
+  /** Each grid node's lowest and highest voltage, p.u. */
+  nodes: Record<string, { min: number; max: number }>;
+  /** By topological and connectivity node. */
+  voltages: Record<string, { pu: number; kV: number; deg: number }>;
+  /** By equipment: each terminal's flow, `p` and `q` into it (MW, Mvar), and the highest loading against a PATL, %. */
+  flows: Record<string, { ends: { terminal: string; p: number; q: number; amps: number; loading: number | null }[]; loading: number | null }>;
+}
+
+/** How far an analysis has come; `error` ends it. */
+export interface AnalysisProgress {
+  error: string | null;
+  done?: number;
+  total: number;
+}
+
+export interface AnalysisViolation {
+  contingency: Linked | null;
+  terminal: string;
+  equipment: Linked | null;
+  limit: Linked;
+  kind: string;
+  amps: number;
+  limitAmps: number;
+  percent: number;
+}
+
+/** A security analysis, by contingency and by element. Percentages are of the limit. */
+export interface Analysis {
+  options: { sharing: Sharing; qLimits: boolean };
+  scenarioTime: string;
+  total: number;
+  solved: number;
+  /** Contingencies that did not converge: no SAR has a place for them. */
+  stalled: Linked[];
+  /** Contingencies naming equipment the model lacks. */
+  absent: Linked[];
+  baseViolations: number;
+  violations: number;
+  pastLimits: { contingency: Linked | null; machine: Linked; mw: number; limit: number }[];
+  requires: string[];
+  contingencies: (Linked & {
+    equipment: Linked[];
+    outcome: 'solved' | 'stalled' | 'absent';
+    violations: number;
+    worst: number | null;
+    grid: Reveal[];
+  })[];
+  elements: {
+    terminal: string;
+    equipment: Linked | null;
+    contingencies: number;
+    worst: number | null;
+    worstContingency: Linked | null;
+    base: number | null;
+    grid: Reveal[];
+  }[];
+}
+
+export interface SarHeader {
+  title: string;
+  description: string;
+  publisher: string;
+  isVersionOf: string;
+  rightsHolder: string;
+  generatedAt: string;
+}
+
+/** A result of a SAR loaded with the model, and the analysis's own for the same, once run. */
+export interface SarResult {
+  id: string;
+  contingency: Linked | null;
+  terminal: Linked | null;
+  equipment: Linked | null;
+  limit: Linked | null;
+  isViolation: string | null;
+  value: string | null;
+  valueA: string | null;
+  atTime: string | null;
+  ours: number | null;
+  analysed: boolean;
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -256,7 +383,20 @@ export type Request =
   | { kind: 'contingencies' }
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
-  | { kind: 'schedules' };
+  | { kind: 'schedules' }
+  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean }
+  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean }
+  | { kind: 'analysisStep'; count: number }
+  | { kind: 'analysisRange'; from: number; to: number }
+  | { kind: 'analysisPart'; from: number; to: number }
+  | { kind: 'analysisAbsorb'; part: unknown }
+  | { kind: 'files' }
+  | { kind: 'loadOnly'; files: File[] }
+  | { kind: 'analysisResult' }
+  | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
+  | { kind: 'sarDefaults' }
+  | { kind: 'sar'; header: SarHeader }
+  | { kind: 'sarResults' };
 
 /** What each kind of request answers. */
 export interface Answers {
@@ -276,9 +416,25 @@ export interface Answers {
   assessedElements: AssessedElement[];
   remedialActions: RemedialAction[];
   schedules: Schedules;
+  powerFlow: PowerFlow;
+  analysisStart: AnalysisProgress;
+  analysisStep: AnalysisProgress;
+  analysisRange: AnalysisProgress;
+  /** A part of an analysis, for the worker merging it. */
+  analysisPart: { error: string | null; part?: unknown };
+  analysisAbsorb: AnalysisProgress;
+  /** The files the model was loaded from, for another worker to load. */
+  files: File[];
+  loadOnly: Loaded;
+  analysisResult: Analysis | null;
+  analysisViolations: AnalysisViolation[];
+  sarDefaults: Partial<SarHeader> | null;
+  /** The SAR's XML. */
+  sar: string;
+  sarResults: SarResult[];
 }
 
 export type Envelope = { id: number; request: Request };
 
 /** A grid can be megabytes: it crosses as text, parsed once, on the side that wants it. */
-export type Reply = { id: number; ok: true; json: string } | { id: number; ok: false; error: string };
+export type Reply = { id: number; ok: true; json: string; files?: File[] } | { id: number; ok: false; error: string };

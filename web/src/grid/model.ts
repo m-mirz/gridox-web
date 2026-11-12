@@ -3,6 +3,7 @@
 // VS Code's messaging; the drawing itself is in views/GridView.svelte.
 
 import type { ElementDefinition, EdgeSingular } from 'cytoscape';
+import type { FlowOverlay } from '../worker/protocol';
 import { type Symbol, symbolOf } from './symbols';
 
 export interface Findings {
@@ -307,4 +308,54 @@ export function route(edge: EdgeSingular, points: Point[]): void {
     "segment-weights": weights.join(" "),
     "segment-distances": distances.join(" "),
   });
+}
+
+/** A voltage's band: within 5 % of nominal, within 10 %, or beyond. */
+export function voltageBand(min: number, max: number): 'ok' | 'warn' | 'bad' {
+  const off = Math.max(Math.abs(min - 1), Math.abs(max - 1));
+  return off <= 0.05 ? 'ok' : off <= 0.1 ? 'warn' : 'bad';
+}
+
+/** A loading's band: below 80 % of its PATL, up to it, or past it; `unknown` without a limit. */
+export function loadingBand(loading: number | null): 'ok' | 'warn' | 'bad' | 'unknown' {
+  return loading === null ? 'unknown' : loading < 80 ? 'ok' : loading <= 100 ? 'warn' : 'bad';
+}
+
+/** What a scene's element shows of a power flow: its band, and a line of text. `null` if nothing. */
+export function flowOf(id: string, kind: string | undefined, flow: FlowOverlay): { band: string; text: string } | null {
+  const pu = (x: number) => x.toFixed(3);
+  if (id.startsWith('e:')) {
+    const f = flow.flows[id.slice(2).split('#')[0]];
+    if (!f) return null;
+    const p = Math.max(...f.ends.map((e) => Math.abs(e.p)));
+    return { band: loadingBand(f.loading), text: f.loading === null ? `${p.toFixed(0)} MW` : `${f.loading.toFixed(0)} %` };
+  }
+  if (kind === 'substation' || kind === 'boundary') {
+    const v = flow.nodes[id];
+    return v ? { band: voltageBand(v.min, v.max), text: v.min === v.max ? `${pu(v.min)} pu` : `${pu(v.min)}–${pu(v.max)} pu` } : null;
+  }
+  if (kind === 'junction' || kind === 'busbar') {
+    const v = flow.voltages[id];
+    return v ? { band: voltageBand(v.pu, v.pu), text: `${pu(v.pu)} pu` } : null;
+  }
+  if (kind === 'symbol') {
+    const f = flow.flows[id];
+    if (!f) return null;
+    const p = Math.max(...f.ends.map((e) => Math.abs(e.p)));
+    return { band: loadingBand(f.loading), text: f.loading === null ? `${p.toFixed(0)} MW` : `${f.loading.toFixed(0)} %` };
+  }
+  return null;
+}
+
+/** An element's power flow, as lines of its details. */
+export function flowLines(id: string, flow: FlowOverlay): string[] {
+  const lines: string[] = [];
+  const v = flow.nodes[id] ?? (flow.voltages[id] ? { min: flow.voltages[id].pu, max: flow.voltages[id].pu } : undefined);
+  if (v) lines.push(v.min === v.max ? `Voltage ${v.min.toFixed(4)} p.u.` : `Voltage ${v.min.toFixed(4)} to ${v.max.toFixed(4)} p.u.`);
+  const f = flow.flows[id];
+  for (const [i, e] of (f?.ends ?? []).entries()) {
+    const loading = e.loading === null ? '' : `, ${e.loading.toFixed(1)} % of its PATL`;
+    lines.push(`End ${i + 1}: ${e.p.toFixed(1)} MW, ${e.q.toFixed(1)} Mvar into it, ${e.amps.toFixed(0)} A${loading}`);
+  }
+  return lines;
 }

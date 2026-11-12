@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- grid_EQ.xml's topology (TP) and its load and breaker (SSH), in one file without a header,
+     and a 200 A PATL on the line's Birch end, which the 50 MW load takes it past. Its published
+     voltages are in grid_SV.xml. -->
+<rdf:RDF xmlns:cim="http://iec.ch/TC57/CIM100#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <cim:TopologicalNode rdf:ID="_00000000-0000-4000-8000-000000000601">
+    <cim:IdentifiedObject.name>Anvil 110</cim:IdentifiedObject.name>
+    <cim:TopologicalNode.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+    <cim:TopologicalNode.ConnectivityNodeContainer rdf:resource="#_00000000-0000-4000-8000-000000000a11"/>
+  </cim:TopologicalNode>
+  <cim:TopologicalNode rdf:ID="_00000000-0000-4000-8000-000000000602">
+    <cim:IdentifiedObject.name>Birch 110</cim:IdentifiedObject.name>
+    <cim:TopologicalNode.BaseVoltage rdf:resource="#_00000000-0000-4000-8000-000000000b00"/>
+    <cim:TopologicalNode.ConnectivityNodeContainer rdf:resource="#_00000000-0000-4000-8000-000000000a12"/>
+  </cim:TopologicalNode>
+  <cim:ConnectivityNode rdf:about="#_00000000-0000-4000-8000-000000000a21">
+    <cim:ConnectivityNode.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+  </cim:ConnectivityNode>
+  <cim:ConnectivityNode rdf:about="#_00000000-0000-4000-8000-000000000a23">
+    <cim:ConnectivityNode.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+  </cim:ConnectivityNode>
+  <cim:ConnectivityNode rdf:about="#_00000000-0000-4000-8000-000000000a22">
+    <cim:ConnectivityNode.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
+  </cim:ConnectivityNode>
+  <cim:Terminal rdf:about="#_00000000-0000-4000-8000-000000000a40">
+    <cim:Terminal.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:ACDCTerminal.connected>true</cim:ACDCTerminal.connected>
+  </cim:Terminal>
+  <cim:Terminal rdf:about="#_00000000-0000-4000-8000-000000000a41">
+    <cim:Terminal.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:ACDCTerminal.connected>true</cim:ACDCTerminal.connected>
+  </cim:Terminal>
+  <cim:Terminal rdf:about="#_00000000-0000-4000-8000-000000000a42">
+    <cim:Terminal.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
+    <cim:ACDCTerminal.connected>true</cim:ACDCTerminal.connected>
+  </cim:Terminal>
+  <cim:Terminal rdf:about="#_00000000-0000-4000-8000-000000000a43">
+    <cim:Terminal.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000601"/>
+    <cim:ACDCTerminal.connected>true</cim:ACDCTerminal.connected>
+  </cim:Terminal>
+  <cim:Terminal rdf:about="#_00000000-0000-4000-8000-000000000a44">
+    <cim:Terminal.TopologicalNode rdf:resource="#_00000000-0000-4000-8000-000000000602"/>
+    <cim:ACDCTerminal.connected>true</cim:ACDCTerminal.connected>
+  </cim:Terminal>
+  <cim:Breaker rdf:about="#_00000000-0000-4000-8000-000000000a30">
+    <cim:Switch.open>false</cim:Switch.open>
+  </cim:Breaker>
+  <cim:ConformLoad rdf:about="#_00000000-0000-4000-8000-000000000a31">
+    <cim:EnergyConsumer.p>50</cim:EnergyConsumer.p>
+    <cim:EnergyConsumer.q>10</cim:EnergyConsumer.q>
+  </cim:ConformLoad>
+  <cim:OperationalLimitType rdf:ID="_00000000-0000-4000-8000-000000000611">
+    <cim:IdentifiedObject.name>PATL</cim:IdentifiedObject.name>
+    <cim:OperationalLimitType.kind rdf:resource="http://iec.ch/TC57/CIM100-European#LimitKind.patl"/>
+  </cim:OperationalLimitType>
+  <cim:OperationalLimitSet rdf:ID="_00000000-0000-4000-8000-000000000612">
+    <cim:IdentifiedObject.name>Anvil-Birch at Birch</cim:IdentifiedObject.name>
+    <cim:OperationalLimitSet.Terminal rdf:resource="#_00000000-0000-4000-8000-000000000a44"/>
+  </cim:OperationalLimitSet>
+  <cim:CurrentLimit rdf:ID="_00000000-0000-4000-8000-000000000613">
+    <cim:IdentifiedObject.name>Anvil-Birch PATL</cim:IdentifiedObject.name>
+    <cim:OperationalLimit.OperationalLimitSet rdf:resource="#_00000000-0000-4000-8000-000000000612"/>
+    <cim:OperationalLimit.OperationalLimitType rdf:resource="#_00000000-0000-4000-8000-000000000611"/>
+    <cim:CurrentLimit.normalValue>200</cim:CurrentLimit.normalValue>
+  </cim:CurrentLimit>
+</rdf:RDF>

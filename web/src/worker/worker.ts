@@ -86,13 +86,44 @@ async function handle(request: Request): Promise<string> {
       return session.remedialActions();
     case 'schedules':
       return session.schedules();
+    case 'powerFlow':
+      return session.powerFlow(request.sharing, request.qLimits);
+    case 'analysisStart':
+      return session.analysisStart(request.sharing, request.qLimits);
+    case 'analysisStep':
+      return session.analysisStep(request.count);
+    case 'analysisResult':
+      return session.analysisResult();
+    case 'analysisViolations':
+      return session.analysisViolations(request.contingency ?? undefined, request.terminal ?? undefined);
+    case 'sarDefaults':
+      return session.sarDefaults();
+    case 'sar':
+      // Every reply is JSON: the XML as a JSON string.
+      return JSON.stringify(session.sar(JSON.stringify(request.header)));
+    case 'sarResults':
+      return session.sarResults();
+    case 'analysisRange':
+      return session.analysisRange(request.from, request.to);
+    case 'analysisPart':
+      return session.analysisPart(request.from, request.to);
+    case 'analysisAbsorb':
+      return session.analysisAbsorb(JSON.stringify(request.part));
+    case 'files':
+      // Sent beside the reply, as files do not go into JSON.
+      return 'null';
+    case 'loadOnly': {
+      // Another worker's model, for a share of its work: nothing is kept for it.
+      files = await add(request.files);
+      return loaded();
+    }
   }
 }
 
 self.onmessage = async ({ data: { id, request } }: MessageEvent<Envelope>) => {
   let reply: Reply;
   try {
-    reply = { id, ok: true, json: await handle(request) };
+    reply = { id, ok: true, json: await handle(request), ...(request.kind === 'files' ? { files } : {}) };
   } catch (error) {
     reply = { id, ok: false, error: String(error) };
   }
