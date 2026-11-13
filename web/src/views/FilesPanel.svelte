@@ -47,6 +47,52 @@
   } = $props();
 
   let names = $derived(summary.files.filter((f) => f.status === 'loaded').map((f) => f.name));
+
+  /** Its width, dragged or keyed at its edge, kept in this browser. */
+  const WIDTH = 'gridox.files-width';
+  const MIN = 220;
+  const MAX = 640;
+  const clamp = (w: number) => Math.round(Math.min(MAX, Math.max(MIN, w)));
+  let width = $state(
+    (() => {
+      try {
+        const kept = Number(localStorage.getItem(WIDTH));
+        return kept ? clamp(kept) : 288;
+      } catch {
+        return 288;
+      }
+    })(),
+  );
+  $effect(() => {
+    try {
+      localStorage.setItem(WIDTH, String(width));
+    } catch {
+      // A convenience.
+    }
+  });
+
+  function drag(event: PointerEvent) {
+    const handle = event.currentTarget as HTMLElement;
+    const start = event.clientX - width;
+    handle.setPointerCapture(event.pointerId);
+    const move = (e: PointerEvent) => (width = clamp(e.clientX - start));
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  }
+
+  function keyed(event: KeyboardEvent) {
+    const step = event.shiftKey ? 64 : 16;
+    if (event.key === 'ArrowLeft') width = clamp(width - step);
+    else if (event.key === 'ArrowRight') width = clamp(width + step);
+    else if (event.key === 'Home') width = MIN;
+    else if (event.key === 'End') width = MAX;
+    else return;
+    event.preventDefault();
+  }
 </script>
 
 {#if collapsed}
@@ -57,6 +103,7 @@
     <span class="sub" title="Files in the model">{names.length - summary.excluded.length}</span>
   </nav>
 {:else}
+  <div class="panel" style:width={`${width}px`}>
   <aside class="files" aria-label="Files" data-testid="files-panel">
     <div class="head">
       <span class="label">Files</span>
@@ -76,19 +123,60 @@
     {#if kept}<p class="sub small" data-testid="kept">Kept in this browser, on this machine, until you clear them.</p>{/if}
     <p class="sub small"><a href="./third-party-licenses.txt" target="_blank" rel="noopener">Licences</a> of the software in gridox</p>
   </aside>
+  <!-- A focusable separator is a widget in ARIA: its width changes with the arrow keys. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="resize"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Width of the files"
+    aria-valuemin={MIN}
+    aria-valuemax={MAX}
+    aria-valuenow={width}
+    tabindex="0"
+    title="Drag, or use the arrow keys, to change the width"
+    onpointerdown={drag}
+    onkeydown={keyed}
+    ></div>
+  </div>
 {/if}
 
 <style>
+  .panel {
+    position: relative;
+    flex-shrink: 0;
+    height: 100%;
+  }
+
   .files {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    width: 18rem;
+    width: 100%;
     height: 100%;
     padding: 0.75rem;
     overflow-y: auto;
     background: var(--surface);
     border-right: 1px solid var(--line);
+  }
+
+  /* Its right edge, to drag. */
+  .resize {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    bottom: 0;
+    z-index: 3;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .resize:hover,
+  .resize:focus-visible {
+    background: var(--accent);
+    outline: none;
+    opacity: 0.5;
   }
 
   .rail {
@@ -138,13 +226,20 @@
 
   /* On a phone: over the view, not beside it. */
   @media (max-width: 48rem) {
-    .files {
+    .panel {
       position: absolute;
       top: 0;
       left: 0;
       z-index: 5;
-      width: min(18rem, 85vw);
+      width: min(18rem, 85vw) !important;
+    }
+
+    .files {
       box-shadow: var(--shadow);
+    }
+
+    .resize {
+      display: none;
     }
   }
 </style>

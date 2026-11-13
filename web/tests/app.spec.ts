@@ -725,6 +725,29 @@ test.describe('the shell', () => {
     await expect(page.getByTestId('inspector')).toBeHidden();
   });
 
+  test('the files panel is as wide as dragged or keyed, and stays so', async ({ page }) => {
+    const panel = page.getByTestId('files-panel');
+    const edge = page.getByRole('separator', { name: 'Width of the files' });
+    const before = (await panel.boundingBox())!.width;
+    const at = (await edge.boundingBox())!;
+    await page.mouse.move(at.x + at.width / 2, at.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(at.x + at.width / 2 + 120, at.y + 200, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(before + 100);
+    const dragged = Number(await edge.getAttribute('aria-valuenow'));
+    await edge.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(edge).toHaveAttribute('aria-valuenow', String(dragged - 16));
+    await page.keyboard.press('Home');
+    await expect(edge).toHaveAttribute('aria-valuenow', '220');
+    // After a reload, where the browser keeps the files and so shows them again.
+    if (await page.getByTestId('kept').isVisible()) {
+      await page.reload();
+      await expect(page.getByRole('separator', { name: 'Width of the files' })).toHaveAttribute('aria-valuenow', '220');
+    }
+  });
+
   test('the top bar says what is edited, and undoes it', async ({ page }) => {
     const undo = page.getByRole('banner').getByRole('button', { name: 'Undo' });
     await expect(undo).toBeDisabled();
@@ -960,6 +983,39 @@ test.describe('choosing many files at once', () => {
     await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('0 of 5 in the model');
     await page.getByTestId('file-tree').getByRole('button', { name: 'All' }).click();
     await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('5 of 5 in the model');
+  });
+
+  test('presets by what the headers say tick files in and out', async ({ page }) => {
+    await input(page).setInputFiles([GRID, NC, MORE]);
+    const tree = page.getByTestId('file-tree');
+    await expect(tree.getByTestId('included')).toHaveText('3 of 3 in the model');
+    const presets = tree.getByTestId('presets');
+    // Two kinds, one maker only: no maker to choose between.
+    await expect(presets.getByRole('button')).toHaveText(['CGMES 1', 'Network codes 2']);
+    await presets.getByRole('button', { name: /^Network codes/ }).click();
+    await expect(tree.getByTestId('included')).toHaveText('1 of 3 in the model');
+    await expect(presets.getByRole('button', { name: /^Network codes/ })).toHaveAttribute('aria-pressed', 'false');
+    await tree.getByLabel('nc_CO_AE.xml in the model').check();
+    await expect(presets.getByRole('button', { name: /^Network codes/ })).toHaveAttribute('aria-pressed', 'mixed');
+    await presets.getByRole('button', { name: /^Network codes/ }).click();
+    await expect(tree.getByTestId('included')).toHaveText('3 of 3 in the model');
+  });
+
+  test('files of one name in two folders are both loaded, each named by its folder', async ({ page }) => {
+    const dir = scratch();
+    for (const sub of ['east', 'west']) {
+      mkdirSync(join(dir, sub), { recursive: true });
+      cpSync(GRID, join(dir, sub, 'grid_EQ.xml'));
+    }
+    await folderInput(page).setInputFiles(dir);
+    await expect(page.getByTestId('totals')).toContainText('from 2 files');
+    const tree = page.getByTestId('file-tree');
+    await expect(tree.getByLabel('grid_EQ.xml in the model', { exact: true })).toBeVisible();
+    await expect(tree.getByLabel('west-grid_EQ.xml in the model')).toBeVisible();
+    // The same folder again: its files are the ones loaded.
+    await folderInput(page).setInputFiles(dir);
+    await expect(page.getByTestId('skipped')).toContainText('a file of this name is already loaded');
+    await expect(page.getByTestId('totals')).toContainText('from 2 files');
   });
 
   test('a folder with nothing to read is said so', async ({ page }) => {
