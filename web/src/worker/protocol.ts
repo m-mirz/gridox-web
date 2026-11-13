@@ -462,7 +462,11 @@ export interface Datasets {
     objects: number;
     foreign: number;
     header: { id: string; class: string; profiles: string[]; refs: HeaderRef[] } | null;
+    /** Its references, by UUID, to objects no file loaded defines; the first of them. */
+    unresolved: { count: number; references: { id: string; label: string | null; class: string | null; key: string; target: string }[] };
   }[];
+  /** How many references, over all files, lead to no object loaded. */
+  unresolved: number;
   /** Objects more than one file defines. */
   twice: { count: number; objects: { id: string; label: string | null; class: string | null; files: string[] }[] };
   /** Objects the files type with unrelated classes. */
