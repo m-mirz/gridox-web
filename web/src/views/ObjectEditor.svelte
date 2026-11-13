@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { WorkerClient } from '../worker/client';
-  import type { Candidate, EditForm, EditResult, Fixes, Linked, ObjectFields } from '../worker/protocol';
+  import type { Candidate, EditForm, EditResult, Fixes, Guided, Linked, ObjectFields } from '../worker/protocol';
 
   /**
    * Edits to one object, in the files as written: the fixes for its findings, its fields set,
@@ -38,6 +38,12 @@
   /** RA_UC4: who answers a remedial action schedule, and with whom. */
   let responders = $state.raw<Linked[]>([]);
   let responding = $state('');
+  /** The use cases' guided edits: CO_UC1's equipment, RA_UC3's and AE_UC3's enabling points. */
+  let guided = $state.raw<Guided | null>(null);
+  let lost = $state('');
+  let lostCandidates = $state.raw<Candidate[]>([]);
+  let pointAt = $state('');
+  let pointEnabled = $state('false');
 
   /** A field's value as the object writes it: a reference's mRID, an enumeration's value. */
   function current(key: string): string {
@@ -60,9 +66,17 @@
       client.request<'editFixes'>({ kind: 'editFixes', id }),
       client.request<'editAddable'>({ kind: 'editAddable', parent: id }),
       object.class === 'RemedialActionSchedule' ? client.request<'editResponders'>({ kind: 'editResponders' }) : Promise.resolve([]),
-    ]).then(([f, x, a, r]) => {
+      client.request<'editGuided'>({ kind: 'editGuided', id }),
+    ]).then(async ([f, x, a, r, g]) => {
       if (!live) return;
       responders = r;
+      guided = g;
+      lost = '';
+      pointAt = g?.kind === 'schedule' ? (g.points.at(-1)?.at ?? '') : '';
+      // Equipment to add: what the first element could name, the likeliest first.
+      const first = g?.kind === 'contingency' ? g.elements[0]?.element.id : undefined;
+      lostCandidates = first ? await client.request<'editCandidates'>({ kind: 'editCandidates', id: first, key: 'ContingencyEquipment.Equipment' }) : [];
+      if (!live) return;
       form = f;
       fixes = x;
       addable = a;
@@ -78,13 +92,14 @@
   let unwritten = $derived((form?.fields ?? []).filter((f) => !f.written));
   let added = $derived(unwritten.find((f) => f.key === adding) ?? null);
 
-  async function run(request: Promise<EditResult>, show: string | null = object.id) {
+  /** `follow`: show what the edit made, rather than `show`. */
+  async function run(request: Promise<EditResult>, show: string | null = object.id, follow = true) {
     busy = true;
     failed = null;
     try {
       const result = await request;
       if (result.error) failed = result.error;
-      else onedited(result, result.id ?? show);
+      else onedited(result, (follow ? result.id : null) ?? show);
     } catch (error) {
       failed = String(error);
     } finally {
@@ -151,6 +166,43 @@
         disabled={busy}
         onclick={() => run(client.request<'editCounterProposal'>({ kind: 'editCounterProposal', refused: object.id, responding: responding || null }))}
       >Counter-propose</button>
+    </div>
+  {/if}
+
+  {#if guided?.kind === 'contingency'}
+    <h4>Equipment lost (CO_UC1)</h4>
+    <ul class="sub" data-testid="guided-elements">
+      {#each guided.elements as e (e.element.id)}<li>{e.equipment.label ?? e.equipment.id} <small>({e.equipment.class ?? 'not in the model'})</small></li>{/each}
+    </ul>
+    <div class="row">
+      <input aria-label="Equipment to add" list="c-lost" placeholder="Equipment mRID" bind:value={lost} />
+      <datalist id="c-lost">
+        {#each lostCandidates as c (c.id)}<option value={c.id}>{c.class} {c.label}{c.place ? ` in ${c.place}` : ''}</option>{/each}
+      </datalist>
+      <button
+        type="button"
+        disabled={busy || !lost.trim()}
+        onclick={() => run(client.request<'editContingencyAdd'>({ kind: 'editContingencyAdd', contingency: object.id, equipment: lost.trim() }), object.id, false)}
+      >Add to the contingency</button>
+    </div>
+    <p class="sub">Shaped like its first element, or taking the equipment out of service if it has none.</p>
+  {:else if guided?.kind === 'schedule'}
+    <h4>Enabled from a time (RA_UC3, AE_UC3)</h4>
+    <ul class="sub" data-testid="guided-points">
+      {#each guided.points as p (p.point.id)}<li>{p.at}: {p.enabled === 'true' ? 'enabled' : p.enabled === 'false' ? 'disabled' : '?'}</li>{/each}
+      {#if !guided.points.length}<li>No {guided.pointClass} yet.</li>{/if}
+    </ul>
+    <div class="row">
+      <input aria-label="From" placeholder="2026-01-01T10:00:00Z" bind:value={pointAt} />
+      <select aria-label="Enabled from then" bind:value={pointEnabled}>
+        <option value="true">enabled</option>
+        <option value="false">disabled</option>
+      </select>
+      <button
+        type="button"
+        disabled={busy || !pointAt.trim()}
+        onclick={() => run(client.request<'editEnabling'>({ kind: 'editEnabling', schedule: object.id, at: pointAt.trim(), enabled: pointEnabled === 'true' }), object.id, false)}
+      >Set from then</button>
     </div>
   {/if}
 

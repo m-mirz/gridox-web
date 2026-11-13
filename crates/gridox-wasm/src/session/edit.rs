@@ -683,3 +683,303 @@ impl Session {
         }
     }
 }
+
+/// The class of the time points that enable or disable on a schedule of class `schedule`: one
+/// with a reference to it (or an ancestor, the nearest preferred), an `atTime` and an `enabled`.
+/// Its class and those three fields.
+pub(super) fn enabling_point(
+    schedule: &'static cimmodel::base::ClassDef,
+) -> Option<(
+    &'static cimmodel::base::ClassDef,
+    &'static str,
+    &'static str,
+    &'static str,
+)> {
+    let reg = type_registry();
+    let chain: Vec<&str> = reg.chain(schedule).iter().map(|c| c.local).collect();
+    let schema = reg.schema(reg.family_of(schedule.qualified)?)?;
+    schema
+        .classes
+        .iter()
+        .filter(|c| c.concrete)
+        .filter_map(|class| {
+            let attrs: Vec<_> = reg.attrs(class).collect();
+            let (depth, to) = attrs
+                .iter()
+                .filter(|a| a.kind == AttrKind::Association && !a.is_list)
+                .filter_map(|a| Some((chain.iter().position(|c| *c == a.range)?, a.id)))
+                .max()?;
+            let at = attrs.iter().find(|a| a.id.ends_with(".atTime"))?.id;
+            let enabled = attrs
+                .iter()
+                .find(|a| a.id.ends_with(".enabled") && a.xsd == "boolean")?
+                .id;
+            Some((depth, class, to, at, enabled))
+        })
+        .max_by_key(|(depth, class, ..)| (*depth, std::cmp::Reverse(class.local)))
+        .map(|(_, class, to, at, enabled)| (class, to, at, enabled))
+}
+
+impl Session {
+    /// The texts as they were before edits staged since `before`, recorded as one edit to undo,
+    /// and the model decoded again.
+    fn commit_staged(&mut self, before: Vec<(String, String)>) -> Value {
+        let changed: Vec<(String, Option<String>)> = before
+            .into_iter()
+            .filter(|(name, text)| self.file_text(name) != Some(text.as_str()))
+            .map(|(name, text)| (name, Some(text)))
+            .collect();
+        if changed.is_empty() {
+            return Self::error("nothing to change");
+        }
+        let names: Vec<String> = changed.iter().map(|(n, _)| n.clone()).collect();
+        self.texts.history.push(changed);
+        self.reload();
+        json!({ "error": null, "changed": names, "revision": self.texts.revision })
+    }
+
+    /// What the use cases' guided edits offer for `id`: for a contingency (CO_UC1), its
+    /// equipment; for a schedule with enabling time points (RA_UC3, AE_UC3), its points.
+    pub fn edit_guided(&self, id: &str) -> Value {
+        let Some(element) = self.dataset.entries.get(id) else {
+            return Value::Null;
+        };
+        let reg = type_registry();
+        let is = |name: &str| reg.chain(element.class()).iter().any(|c| c.local == name);
+        let referring = |key: &str| -> Vec<&String> {
+            let mut found: Vec<&String> = self
+                .dataset
+                .entries
+                .iter()
+                .filter(|(_, e)| e.get_ref(key).is_some_and(|t| cimview::mrid_of(t) == id))
+                .map(|(k, _)| k)
+                .collect();
+            found.sort();
+            found
+        };
+        if is("Contingency") {
+            let elements: Vec<Value> = referring("ContingencyElement.Contingency")
+                .into_iter()
+                .filter_map(|e| {
+                    let equipment = self.dataset.entries[e].get_ref("ContingencyEquipment.Equipment")?;
+                    Some(json!({ "element": self.linked(e), "equipment": self.linked(cimview::mrid_of(equipment)) }))
+                })
+                .collect();
+            return json!({ "kind": "contingency", "elements": elements });
+        }
+        if let Some((class, to, at, enabled)) = enabling_point(element.class()) {
+            let mut points: Vec<(String, Value)> = referring(to)
+                .into_iter()
+                .filter(|p| self.dataset.entries[*p].class().local == class.local)
+                .map(|p| {
+                    let e = &self.dataset.entries[p];
+                    let time = e.get_str(at).unwrap_or_default().to_string();
+                    (time.clone(), json!({ "point": self.linked(p), "at": time, "enabled": e.get_str(enabled) }))
+                })
+                .collect();
+            points.sort_by(|a, b| a.0.cmp(&b.0));
+            return json!({
+                "kind": "schedule", "pointClass": class.local,
+                "points": points.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+            });
+        }
+        Value::Null
+    }
+
+    /// CO_UC1: `equipment` added to the contingency `contingency`, as a ContingencyEquipment
+    /// shaped like its first (a copy, naming `equipment`, named as it is), else a new one taking
+    /// it out of service, in the file defining the contingency. One edit.
+    pub fn edit_contingency_add(
+        &mut self,
+        contingency: &str,
+        equipment: &str,
+        random: &[u8],
+    ) -> Value {
+        let reg = type_registry();
+        let Some(element) = self.dataset.entries.get(contingency) else {
+            return Self::error(format!("no object `{contingency}`"));
+        };
+        if !reg
+            .chain(element.class())
+            .iter()
+            .any(|c| c.local == "Contingency")
+        {
+            return Self::error(format!("`{contingency}` is no contingency"));
+        }
+        let equipment = equipment.trim().trim_start_matches('#');
+        let Some(target) = self.dataset.entries.get(equipment) else {
+            return Self::error(format!("the model has no object `{equipment}`"));
+        };
+        if !target
+            .types()
+            .any(|t| reg.chain(t).iter().any(|c| c.local == "Equipment"))
+        {
+            return Self::error(format!("`{equipment}` is no equipment"));
+        }
+        let name = target.get_str("IdentifiedObject.name").map(str::to_string);
+        let mut elements: Vec<&String> = self
+            .dataset
+            .by_type
+            .get("nc:ContingencyEquipment")
+            .into_iter()
+            .flatten()
+            .filter(|e| {
+                self.dataset.entries[*e]
+                    .get_ref("ContingencyElement.Contingency")
+                    .is_some_and(|c| cimview::mrid_of(c) == contingency)
+            })
+            .collect();
+        elements.sort();
+        if elements.iter().any(|e| {
+            self.dataset.entries[*e]
+                .get_ref("ContingencyEquipment.Equipment")
+                .is_some_and(|q| cimview::mrid_of(q) == equipment)
+        }) {
+            return Self::error("the contingency has that equipment already");
+        }
+        let first = elements.first().map(|e| e.to_string());
+        let first_named = first.as_ref().is_some_and(|f| {
+            self.dataset.entries[f]
+                .get_str("IdentifiedObject.name")
+                .is_some()
+        });
+        self.build_texts();
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
+        let mut exhausted = false;
+        let mut next = || {
+            draws.next().unwrap_or_else(|| {
+                exhausted = true;
+                [0; 16]
+            })
+        };
+        let before = self.texts.files.clone();
+        let undo = |s: &mut Self| {
+            s.texts.files = before.clone();
+            s.texts.built = None;
+        };
+        let result: Result<String, String> = (|| match &first {
+            Some(first) => {
+                let from = self
+                    .defining_file(first)
+                    .ok_or("no file defines the first element")?;
+                let copied = ed::copy(&self.edit_files(), &[first], Some(&from), None, &mut next)?;
+                let id = copied.ids[0].1.clone();
+                self.stage(owned(copied.edits));
+                let mut fields = vec![("ContingencyEquipment.Equipment", equipment.to_string())];
+                if let (true, Some(name)) = (first_named, &name) {
+                    fields.push(("IdentifiedObject.name", name.clone()));
+                }
+                for (key, value) in fields {
+                    let e = ed::set_field(&self.edit_files(), &from, &id, key, &value)?;
+                    self.stage(owned(e));
+                }
+                Ok(id)
+            }
+            None => {
+                let into = self
+                    .defining_file(contingency)
+                    .ok_or("no file defines the contingency")?;
+                let values = [
+                    ("ContingencyElement.Contingency", contingency),
+                    ("ContingencyEquipment.Equipment", equipment),
+                    ("ContingencyEquipment.contingentStatus", "outOfService"),
+                ];
+                let added = ed::create(
+                    &self.edit_files(),
+                    &into,
+                    "ContingencyEquipment",
+                    &values,
+                    &mut next,
+                )?;
+                let id = added.id.clone();
+                self.stage(owned(added.edits));
+                Ok(id)
+            }
+        })();
+        match result {
+            Ok(_) if exhausted => {
+                undo(self);
+                Self::error("not enough random bytes for an identifier")
+            }
+            Ok(id) => {
+                let mut out = self.commit_staged(before.clone());
+                out["id"] = json!(id);
+                out
+            }
+            Err(e) => {
+                undo(self);
+                Self::error(e)
+            }
+        }
+    }
+
+    /// RA_UC3, AE_UC3: the schedule `schedule` enabling, or not, from `at` (`2026-01-01T10:00:00Z`):
+    /// its time point at that time set so, else a new one, in the file defining the schedule.
+    pub fn edit_enabling(
+        &mut self,
+        schedule: &str,
+        at: &str,
+        enabled: bool,
+        random: &[u8],
+    ) -> Value {
+        let Some(element) = self.dataset.entries.get(schedule) else {
+            return Self::error(format!("no object `{schedule}`"));
+        };
+        let Some((class, to, at_key, enabled_key)) = enabling_point(element.class()) else {
+            return Self::error(format!(
+                "{} has no enabling time points",
+                element.local_name()
+            ));
+        };
+        let at = at.trim();
+        if super::seconds(at).is_none() {
+            return Self::error(format!(
+                "`{at}` is no time: write it as 2026-01-01T10:00:00Z"
+            ));
+        }
+        let value = if enabled { "true" } else { "false" };
+        let same_time = |t: &str| t == at || super::seconds(t) == super::seconds(at);
+        let existing = self
+            .dataset
+            .entries
+            .iter()
+            .filter(|(_, e)| e.class().local == class.local)
+            .filter(|(_, e)| {
+                e.get_ref(to)
+                    .is_some_and(|s| cimview::mrid_of(s) == schedule)
+            })
+            .find(|(_, e)| e.get_str(at_key).is_some_and(same_time))
+            .map(|(k, _)| k.clone());
+        if let Some(point) = existing {
+            let mut out = self.edit_set(&point, enabled_key, value);
+            out["id"] = json!(point);
+            return out;
+        }
+        self.build_texts();
+        let Some(into) = self.defining_file(schedule) else {
+            return Self::error(format!("no file defines `{schedule}`"));
+        };
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
+        let mut exhausted = false;
+        let mut next = || {
+            draws.next().unwrap_or_else(|| {
+                exhausted = true;
+                [0; 16]
+            })
+        };
+        let values = [(to, schedule), (at_key, at), (enabled_key, value)];
+        let added = ed::create(&self.edit_files(), &into, class.local, &values, &mut next);
+        if exhausted {
+            return Self::error("not enough random bytes for an identifier");
+        }
+        match added {
+            Ok(a) => {
+                let id = a.id.clone();
+                let mut out = self.apply_edits(owned(a.edits));
+                out["id"] = json!(id);
+                out
+            }
+            Err(e) => Self::error(e),
+        }
+    }
+}

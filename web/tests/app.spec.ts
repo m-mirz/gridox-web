@@ -682,6 +682,35 @@ test.describe('editing', () => {
     await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
   });
 
+  test('CO_UC1: equipment is added to a contingency, shaped like its first', async ({ page }) => {
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await input(page).setInputFiles([GRID, STATE, SV, NC]);
+    await expect(page.getByTestId('totals')).toContainText('from 4 files');
+    const edit = await open(page, /^Loss of Anvil-Birch/);
+    await expect(edit.getByTestId('guided-elements')).toHaveText('Anvil-Birch (ACLineSegment)');
+    await edit.getByLabel('Equipment to add').fill('_00000000-0000-4000-8000-000000000a31');
+    await edit.getByRole('button', { name: 'Add to the contingency' }).click();
+    await expect(edit.getByTestId('guided-elements').locator('li')).toHaveCount(2);
+    await expect(edit.getByTestId('guided-elements')).toContainText('Load B (ConformLoad)');
+    await expect(page.getByTestId('edited-files')).toContainText('nc_CO_AE.xml');
+  });
+
+  test('RA_UC3: a schedule is disabled from a time, and enabled again', async ({ page }) => {
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await input(page).setInputFiles([GRID, STATE, SV, RA, fixture('nc_SIS_enabling.xml')]);
+    await expect(page.getByTestId('totals')).toContainText('from 5 files');
+    const edit = await open(page, /^TA open enabling/);
+    const points = edit.getByTestId('guided-points').locator('li');
+    await expect(points).toHaveText(['2026-01-01T00:00:00Z: enabled']);
+    await edit.getByLabel('From', { exact: true }).fill('2026-01-01T10:00:00Z');
+    await edit.getByLabel('Enabled from then').selectOption('disabled');
+    await edit.getByRole('button', { name: 'Set from then' }).click();
+    await expect(points).toHaveText(['2026-01-01T00:00:00Z: enabled', '2026-01-01T10:00:00Z: disabled']);
+    await edit.getByLabel('Enabled from then').selectOption('enabled');
+    await edit.getByRole('button', { name: 'Set from then' }).click();
+    await expect(points).toHaveText(['2026-01-01T00:00:00Z: enabled', '2026-01-01T10:00:00Z: enabled']);
+  });
+
   test('a value set changes the files and the model, is validated, and can be undone', async ({ page }) => {
     const edit = await open(page, /^Load B/);
     await edit.getByLabel('Value of EnergyConsumer.p').fill('80');
