@@ -370,6 +370,11 @@
       <h2>Open a model</h2>
       <p class="sub">CGMES and Network Code files, a zip of them or their folder: read on this machine, never uploaded.</p>
       <DropZone {busy} compact={false} onfiles={(files, paths) => run({ kind: 'load', files, paths })} />
+      <p class="sub about" data-testid="about">
+        gridox is free software under the Apache License 2.0, with libraries under their own licences, LGPL-2.1-or-later code among
+        them: see the <a href="./third-party-licenses.txt" target="_blank" rel="noopener">licences</a>, and the
+        <a href="https://github.com/m-mirz/gridox-web" target="_blank" rel="noopener">source</a>.
+      </p>
     </div>
   {/if}
 </div>
@@ -524,6 +529,11 @@
 
   .welcome p {
     margin: 0 0 0.5rem;
+  }
+
+  .welcome .about {
+    margin-top: 1rem;
+    font-size: 0.85rem;
   }
 
   @media (max-width: 48rem) {

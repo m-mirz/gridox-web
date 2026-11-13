@@ -29,6 +29,15 @@ harness and gridoxide's tests record, the data's problems included. It takes Rel
 `../cimoxide/relicapgrid` (fetch it with `git submodule update --init --checkout relicapgrid` there), and skips without it. SAR_UC1
 validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/target/release/cimcli`.
 
+## Licences
+
+gridox is licensed under the Apache License 2.0. The site it builds carries libraries under their
+own licences, listed with their notices in `third-party-licenses.txt`, which `npm run build`
+writes from cargo's and npm's metadata (`web/scripts/licenses.mjs`) and the page links to. Among
+them is LGPL-2.1-or-later code: gridoxide's default solver, `klu_native` in gridoxide-sparse, is a
+Rust translation of SuiteSparse's KLU and BTF. The file says where its source is and how to rebuild
+the WebAssembly module with a modified version, as that licence asks.
+
 ## How it fits together
 
 `crates/gridox-wasm` is the libraries' API as the worker needs it, JSON in and out. `web/src/worker` holds the model in a Web Worker, so the

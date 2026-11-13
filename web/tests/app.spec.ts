@@ -191,6 +191,27 @@ test('the policy against other sites is in the page', async ({ page }) => {
   await expect(policy).toHaveAttribute('content', /default-src 'self'/);
 });
 
+test('says what software it carries, under which licences, and links to it', async ({ page }) => {
+  const link = page.getByTestId('about').getByRole('link', { name: 'licences' });
+  await expect(link).toHaveAttribute('href', './third-party-licenses.txt');
+  const response = await page.request.get('third-party-licenses.txt');
+  expect(response.ok()).toBe(true);
+  const text = await response.text();
+  // The LGPL code first, with where its source is, how to relink, and the licence.
+  const lgpl = text.indexOf('1. Code under the GNU Lesser General Public License');
+  expect(lgpl).toBeGreaterThan(0);
+  expect(text).toMatch(/gridoxide-sparse \S+ \(licence: [^)]*LGPL-2\.1-or-later\)/);
+  expect(text).toContain('SuiteSparse KLU');
+  expect(text).toContain('[patch.crates-io]');
+  expect(text).toContain('GNU LESSER GENERAL PUBLIC LICENSE');
+  expect(text).toContain('Version 2.1, February 1999');
+  // Every library, each with its text.
+  for (const name of ['cytoscape', 'svelte', 'workbox-core', 'faer', 'serde_json', 'quick-xml', 'cimoxide-model']) {
+    expect(text, name).toContain(`--- ${name} `);
+  }
+  expect(text).not.toContain('carries no licence file; its licence is the one named above');
+});
+
 /** Whether anything has been painted on the graph's canvases. */
 const painted = (page: Page) =>
   page.getByTestId('graph').evaluate((graph) =>
