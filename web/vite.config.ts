@@ -51,7 +51,7 @@ export default defineConfig({
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,wasm,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,wasm,svg,webmanifest,txt}'],
         // The wasm is the app, and is larger than workbox's default limit of 2 MiB.
         maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
       },

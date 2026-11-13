@@ -4,3 +4,4 @@ node_modules
 /web/src/wasm
 /web/test-results
 /web/playwright-report
+/web/public/third-party-licenses.txt
