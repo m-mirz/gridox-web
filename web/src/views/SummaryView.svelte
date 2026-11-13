@@ -20,14 +20,16 @@
   </p>
 
   {#if skipped.length}
-    <h3>Not loaded</h3>
-    <ul class="skipped" data-testid="skipped">
-      {#each skipped as file}
-        {#if file.status === 'skipped'}
-          <li><strong>{file.name}</strong>: {file.reason}</li>
-        {/if}
-      {/each}
-    </ul>
+    <details class="not-loaded" open={skipped.length <= 3}>
+      <summary>{skipped.length === 1 ? '1 file' : `${skipped.length} files`} not loaded</summary>
+      <ul class="skipped" data-testid="skipped">
+        {#each skipped as file}
+          {#if file.status === 'skipped'}
+            <li><strong>{file.name}</strong>: {file.reason}</li>
+          {/if}
+        {/each}
+      </ul>
+    </details>
   {/if}
 {:else if summary.classes.length}
   <h3>Objects by class</h3>
@@ -47,6 +49,11 @@
   .totals {
     margin: 0;
     color: var(--text-2);
+  }
+
+  .not-loaded summary {
+    color: var(--warning);
+    font-weight: 600;
   }
 
   .skipped {

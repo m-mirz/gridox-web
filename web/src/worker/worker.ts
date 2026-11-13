@@ -46,6 +46,27 @@ async function add(files: File[]): Promise<File[]> {
   return added;
 }
 
+/**
+ * `files`, one whose name is taken by another file (loaded, or earlier in these) named by its
+ * folders too: `NetworkCode-2D_IAM_0030Z.xml` beside `GridSituation-2D_IAM_0030Z.xml`. The same file
+ * again, at the same path, keeps its name, and is refused as loaded already.
+ */
+function distinct(files: File[], at: string[]): File[] {
+  const taken = new Set(Object.keys(paths));
+  const loadedAt = new Set(Object.values(paths));
+  return files.map((file, i) => {
+    const path = at[i] ?? file.name;
+    let name = file.name;
+    if (taken.has(name) && !loadedAt.has(path)) {
+      const parts = path.split('/');
+      for (let k = 2; k <= parts.length && taken.has(name); k++) name = parts.slice(-k).join('-');
+    }
+    taken.add(name);
+    loadedAt.add(path);
+    return name === file.name ? file : new File([file], name, { type: file.type, lastModified: file.lastModified });
+  });
+}
+
 /** After an edit: the files it changed, as they are now, in place of the ones loaded and kept. */
 async function edited(reply: string): Promise<string> {
   const { changed, removed = [] } = JSON.parse(reply) as { changed: string[]; removed?: string[] };
@@ -77,8 +98,9 @@ async function handle(request: Request): Promise<string> {
   switch (request.kind) {
     case 'load': {
       // A zip's XML files in its place: they, not the archive, are what is kept.
-      const { files: opened, paths: at, failed } = await unzipped(request.files, request.paths ?? []);
+      const { files: found, paths: at, failed } = await unzipped(request.files, request.paths ?? []);
       for (const { name, reason } of failed) session.skipFile(name, reason);
+      const opened = distinct(found, at);
       const added = await add(opened);
       for (const file of added) paths[file.name] = at[opened.indexOf(file)] ?? file.name;
       files.push(...added);

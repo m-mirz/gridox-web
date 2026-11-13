@@ -25,8 +25,79 @@ pub use power_flow::Options as PowerFlowOptions;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum FileOutcome {
-    Loaded { name: String, objects: usize },
-    Skipped { name: String, reason: String },
+    Loaded {
+        name: String,
+        objects: usize,
+        /// `cgmes` for a FullModel header, `nc` for a DCAT one; none without a header.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<String>,
+        /// Who made it, by its header: the modelling authority's or the publisher's name.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        maker: Option<String>,
+    },
+    Skipped {
+        name: String,
+        reason: String,
+    },
+}
+
+/// What a file's header says of it: its kind, `cgmes` or `nc`, and who made it.
+fn header_of(dataset: &CimDataset) -> (Option<String>, Option<String>) {
+    let Some(header) = dataset
+        .entries
+        .values()
+        .chain(dataset.foreign.values())
+        .find(|e| HEADERS.contains(&e.local_name()))
+    else {
+        return (None, None);
+    };
+    let first = |key: &str| -> Option<String> {
+        header
+            .fields()
+            .iter()
+            .find(|(k, _)| **k == key || k.ends_with(&format!(".{key}")))
+            .and_then(|(_, v)| match v {
+                FieldValue::Text(v) | FieldValue::Resource(v) => Some(v.clone()),
+                FieldValue::TextList(vs) | FieldValue::ResourceList(vs) => vs.first().cloned(),
+            })
+    };
+    let (kind, raw) = if header.local_name() == "Dataset" {
+        ("nc", first("publisher"))
+    } else {
+        ("cgmes", first("modelingAuthoritySet"))
+    };
+    (Some(kind.to_string()), raw.as_deref().and_then(maker_name))
+}
+
+/// A maker's name from its IRI: a party's (`…/party/TSO-Svedala`) its last segment, an authority's
+/// (`http://svedala.sd/CGMES`) its host's first label; a role before it left off (`TSO-`, `RCC-`,
+/// `Org-`), so a TSO's grid models and network codes come under one name.
+fn maker_name(iri: &str) -> Option<String> {
+    let iri = iri.trim();
+    let rest = iri.split_once("://").map_or(iri, |(_, r)| r);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let name = if path.contains("party/") || host.starts_with("energy.referencedata") {
+        segments.last().map(|s| s.to_string())?
+    } else {
+        let first = host.trim_start_matches("www.").split('.').next()?;
+        first
+            .split('-')
+            .map(|p| {
+                let mut c = p.chars();
+                c.next().map_or(String::new(), |f| {
+                    f.to_uppercase().collect::<String>() + c.as_str()
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("-")
+    };
+    let roles = ["TSO-", "DCSO-", "DSO-", "RCC-", "RSC-", "Org-", "SO-"];
+    let bare = roles
+        .iter()
+        .find_map(|r| name.strip_prefix(r).filter(|_| name.len() > r.len()))
+        .unwrap_or(&name);
+    (!bare.is_empty()).then(|| bare.to_string())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -185,6 +256,7 @@ impl Session {
             match CimDataset::decode_str(text) {
                 Ok(dataset) => {
                     let objects = dataset.entries.len();
+                    let (kind, maker) = header_of(&dataset);
                     self.dataset.merge(dataset);
                     self.texts.add(name, text);
                     self.views = None;
@@ -194,6 +266,8 @@ impl Session {
                     FileOutcome::Loaded {
                         name: name.to_string(),
                         objects,
+                        kind,
+                        maker,
                     }
                 }
                 Err(error) => skipped(name, &error.to_string()),
@@ -1622,12 +1696,8 @@ mod tests {
         session.add_file("small_EQ.xml", EQ);
         let summary = session.summary();
         assert_eq!(summary.objects, 4);
-        assert_eq!(
-            summary.files,
-            [FileOutcome::Loaded {
-                name: "small_EQ.xml".to_string(),
-                objects: 4
-            }]
+        assert!(
+            matches!(&summary.files[..], [FileOutcome::Loaded { name, objects: 4, .. }] if name == "small_EQ.xml")
         );
         let lines = summary.classes.iter().find(|c| c.class == "ACLineSegment");
         assert_eq!(lines.map(|c| c.objects), Some(2));
@@ -2406,6 +2476,50 @@ mod tests {
         // Names not loaded are no matter.
         session.set_excluded(&["nothing.xml".to_string()]);
         assert!(session.summary().excluded.is_empty());
+    }
+
+    #[test]
+    fn a_files_maker_is_named_from_its_header() {
+        for (iri, name) in [
+            ("http://svedala.sd/CGMES", "Svedala"),
+            ("http://espheim-svedala.es/CGMES", "Espheim-Svedala"),
+            ("http://portheim.ph", "Portheim"),
+            (
+                "https://energy.referencedata.eu/test/party/TSO-Svedala",
+                "Svedala",
+            ),
+            (
+                "https://energy.referencedata.eu/test/party/DCSO-Espheim-Svedala",
+                "Espheim-Svedala",
+            ),
+            (
+                "https://energy.referencedata.eu/test/party/RCC-Jotunheim",
+                "Jotunheim",
+            ),
+            (
+                "https://energy.referencedata.eu/test/party/Org-NineRealms",
+                "NineRealms",
+            ),
+            ("https://www.entsoe.eu/", "Entsoe"),
+        ] {
+            assert_eq!(maker_name(iri).as_deref(), Some(name), "{iri}");
+        }
+        let mut session = Session::new();
+        session.add_file("grid_EQ.xml", GRID);
+        session.add_file("nc_CO_more.xml", MORE);
+        let kinds: Vec<(Option<String>, Option<String>)> = session
+            .summary()
+            .files
+            .into_iter()
+            .map(|f| match f {
+                FileOutcome::Loaded { kind, maker, .. } => (kind, maker),
+                FileOutcome::Skipped { .. } => (None, None),
+            })
+            .collect();
+        assert_eq!(kinds[0].0.as_deref(), Some("cgmes"));
+        assert_eq!(kinds[1].0.as_deref(), Some("nc"));
+        // Its publisher, …/party/South.
+        assert_eq!(kinds[1].1.as_deref(), Some("South"), "{kinds:?}");
     }
 
     fn random() -> Vec<u8> {

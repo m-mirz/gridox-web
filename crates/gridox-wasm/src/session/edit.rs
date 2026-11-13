@@ -445,9 +445,21 @@ impl Session {
             undo(self);
             return Self::error("not enough random bytes for the identifiers");
         }
+        let (kind, maker) = self
+            .files
+            .iter()
+            .find_map(|f| match f {
+                super::FileOutcome::Loaded {
+                    name, kind, maker, ..
+                } if *name == like => Some((kind.clone(), maker.clone())),
+                _ => None,
+            })
+            .unwrap_or_default();
         self.files.push(super::FileOutcome::Loaded {
             name: name.clone(),
             objects: ids.len() + 2,
+            kind,
+            maker,
         });
         self.texts.history.push(vec![(name.clone(), None)]);
         self.reload();

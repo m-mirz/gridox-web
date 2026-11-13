@@ -90,6 +90,23 @@ test('the whole instance loaded once, one IGM chosen from it', async ({ page }) 
   await expect(page.getByTestId('pf-components')).toContainText(PF.Svedala.sv);
 });
 
+// The same by the headers: the files Svedala made and the common data's, from the presets.
+test('one maker and the common data chosen by their presets', async ({ page }) => {
+  await page.getByLabel('Choose a folder').setInputFiles(ROOT);
+  const tree = page.getByTestId('file-tree');
+  await expect(tree.getByTestId('included')).toContainText('in the model', { timeout: 200_000 });
+  await tree.getByRole('button', { name: 'None' }).click();
+  await expect(tree.getByTestId('included')).toContainText(/^0 of /, { timeout: 200_000 });
+  const presets = tree.getByTestId('presets');
+  for (const maker of ['Svedala', 'NineRealms']) {
+    await presets.getByRole('button', { name: new RegExp(`^${maker} \\d`) }).click();
+    await expect(presets.getByRole('button', { name: new RegExp(`^${maker} \\d`) })).toHaveAttribute('aria-pressed', 'true', { timeout: 200_000 });
+  }
+  await solve(page);
+  await expect(page.getByTestId('pf-verdict')).toHaveText(PF.Svedala.verdict);
+  await expect(page.getByTestId('pf-components')).toContainText(PF.Svedala.sv);
+});
+
 test('PF_UC1 Espheim converges without reactive limits', async ({ page }) => {
   await load(page, area('Espheim'));
   await solve(page, false);

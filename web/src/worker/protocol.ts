@@ -3,7 +3,15 @@
 import type { Findings, Grid, Inside, Reveal } from '../grid/model';
 
 export type FileOutcome =
-  | { status: 'loaded'; name: string; objects: number }
+  | {
+      status: 'loaded';
+      name: string;
+      objects: number;
+      /** By its header: `cgmes` for a FullModel, `nc` for a DCAT dataset. */
+      kind?: 'cgmes' | 'nc';
+      /** Who made it, by its header: the modelling authority's or the publisher's name. */
+      maker?: string;
+    }
   | { status: 'skipped'; name: string; reason: string };
 
 /** gridox-wasm's `Summary`. */

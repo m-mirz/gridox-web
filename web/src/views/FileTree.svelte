@@ -54,6 +54,30 @@
   });
 
   let excluded = $derived(new Set(summary.excluded));
+
+  /**
+   * Presets, by what the files' headers say: who made them (a name whatever its case, once), and
+   * their kind. Each ticks its files in, or out when all are in. Shown where there is a choice.
+   */
+  let presets = $derived.by(() => {
+    const loaded = summary.files.flatMap((f) => (f.status === 'loaded' ? [f] : []));
+    const makers = new Map<string, { label: string; names: string[] }>();
+    for (const f of loaded) {
+      if (!f.maker) continue;
+      const key = f.maker.toLowerCase();
+      const group = makers.get(key) ?? { label: f.maker, names: [] };
+      // The name as a party writes it (NineRealms) over one cut from a host (Ninerealms).
+      if (/[a-z][A-Z]/.test(f.maker)) group.label = f.maker;
+      group.names.push(f.name);
+      makers.set(key, group);
+    }
+    const byMaker = [...makers.values()].sort((a, b) => a.label.localeCompare(b.label));
+    const kinds = [
+      { label: 'CGMES', names: loaded.filter((f) => f.kind === 'cgmes').map((f) => f.name) },
+      { label: 'Network codes', names: loaded.filter((f) => f.kind === 'nc').map((f) => f.name) },
+    ].filter((k) => k.names.length);
+    return { byMaker: byMaker.length > 1 ? byMaker : [], kinds: kinds.length > 1 ? kinds : [] };
+  });
   let included = $derived(root.all.length - excluded.size);
 
   /** Folders shown opened: the first level, unless there are many files. */
@@ -93,6 +117,23 @@
     <button type="button" class="ghost small" disabled={busy || excluded.size === 0} onclick={() => set(root.all, true)}>All</button>
     <button type="button" class="ghost small" disabled={busy || excluded.size === root.all.length} onclick={() => set(root.all, false)}>None</button>
   </div>
+  {#if presets.byMaker.length || presets.kinds.length}
+    <div class="presets" data-testid="presets">
+      {#each [...presets.kinds, ...presets.byMaker] as p (p.label)}
+        {@const s = ticked(p.names)}
+        <button
+          type="button"
+          class="chip"
+          class:all={s === 'all'}
+          class:some={s === 'some'}
+          aria-pressed={s === 'all' ? 'true' : s === 'some' ? 'mixed' : 'false'}
+          title={`${p.names.length} files${s === 'all' ? ': take them out' : ': tick them in'}`}
+          disabled={busy}
+          onclick={() => set(p.names, s !== 'all')}>{p.label} <span class="n">{p.names.length}</span></button
+        >
+      {/each}
+    </div>
+  {/if}
   {@render folder(root, 0)}
 </section>
 
@@ -159,6 +200,37 @@
     min-height: 1.6rem;
     padding: 0 0.5rem;
     font-size: 0.8rem;
+  }
+
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .chip {
+    min-height: 1.6rem;
+    padding: 0 0.55rem;
+    border-radius: 0.8rem;
+    color: var(--text-2);
+    font-size: 0.8rem;
+  }
+
+  .chip .n {
+    color: var(--text-3);
+    font-size: 0.75rem;
+  }
+
+  .chip.all {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .chip.some {
+    border-style: dashed;
+    border-color: var(--accent);
   }
 
   ul {
