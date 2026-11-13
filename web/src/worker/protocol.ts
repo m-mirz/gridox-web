@@ -378,6 +378,11 @@ export interface Analysis {
   }[];
 }
 
+/** What the use cases' guided edits offer for an object. */
+export type Guided =
+  | { kind: 'contingency'; elements: { element: Linked; equipment: Linked }[] }
+  | { kind: 'schedule'; pointClass: string; points: { point: Linked; at: string; enabled: string | null }[] };
+
 export interface SarHeader {
   title: string;
   description: string;
@@ -507,6 +512,9 @@ export type Request =
   | { kind: 'editApply'; revision: number; edits: unknown }
   | { kind: 'editCounterProposal'; refused: string; responding: string | null }
   | { kind: 'editResponders' }
+  | { kind: 'editGuided'; id: string }
+  | { kind: 'editContingencyAdd'; contingency: string; equipment: string }
+  | { kind: 'editEnabling'; schedule: string; at: string; enabled: boolean }
   | { kind: 'loadOnly'; files: File[] }
   | { kind: 'analysisResult' }
   | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
@@ -560,6 +568,9 @@ export interface Answers {
   editApply: EditResult;
   editCounterProposal: EditResult;
   editResponders: Linked[];
+  editGuided: Guided | null;
+  editContingencyAdd: EditResult;
+  editEnabling: EditResult;
   analysisResult: Analysis | null;
   analysisViolations: AnalysisViolation[];
   sarDefaults: Partial<SarHeader> | null;

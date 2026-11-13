@@ -2244,6 +2244,124 @@ mod tests {
         }
     }
 
+    fn random() -> Vec<u8> {
+        (0u8..160).collect()
+    }
+
+    #[test]
+    fn equipment_added_to_a_contingency_is_shaped_like_its_first() {
+        let mut session = solvable();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.add_file("nc_CO_more.xml", MORE);
+        let c = "_00000000-0000-4000-8000-000000000c01";
+        assert_eq!(
+            session.edit_guided(c)["elements"].as_array().unwrap().len(),
+            1
+        );
+        let added =
+            session.edit_contingency_add(c, "_00000000-0000-4000-8000-000000000a31", &random());
+        assert_eq!(added["error"], Value::Null, "{added}");
+        assert_eq!(added["changed"], json!(["nc_CO_AE.xml"]));
+        let id = added["id"].as_str().unwrap();
+        let e = &session.dataset.entries[id];
+        assert_eq!(
+            e.get_ref("ContingencyEquipment.Equipment").map(mrid_of),
+            Some("_00000000-0000-4000-8000-000000000a31")
+        );
+        assert_eq!(
+            e.get_ref("ContingencyElement.Contingency").map(mrid_of),
+            Some(c)
+        );
+        assert!(
+            e.get_ref("ContingencyEquipment.contingentStatus")
+                .is_some_and(|s| s.ends_with("outOfService"))
+        );
+        let guided = session.edit_guided(c);
+        let lost: Vec<&str> = guided["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["equipment"]["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(lost.len(), 2);
+        assert!(
+            lost.contains(&"Load B") && lost.contains(&"Anvil-Birch"),
+            "{lost:?}"
+        );
+        // Not twice, and only equipment.
+        assert!(session.edit_contingency_add(c, "_00000000-0000-4000-8000-000000000a31", &random())["error"].as_str().unwrap().contains("already"));
+        assert!(
+            session.edit_contingency_add(c, c, &random())["error"]
+                .as_str()
+                .unwrap()
+                .contains("no equipment")
+        );
+        // One edit, undone as one.
+        session.edit_undo();
+        assert_eq!(session.file_text("nc_CO_AE.xml"), Some(NC));
+        // A contingency with no element gets a new one, out of service.
+        let nothing = "_00000000-0000-4000-8000-000000000701";
+        let added = session.edit_contingency_add(
+            nothing,
+            "_00000000-0000-4000-8000-000000000a32",
+            &random(),
+        );
+        assert_eq!(added["changed"], json!(["nc_CO_more.xml"]), "{added}");
+        let e = &session.dataset.entries[added["id"].as_str().unwrap()];
+        assert!(
+            e.get_ref("ContingencyEquipment.contingentStatus")
+                .is_some_and(|s| s.ends_with("outOfService"))
+        );
+        assert_eq!(
+            e.get_ref("ContingencyElement.Contingency").map(mrid_of),
+            Some(nothing)
+        );
+    }
+
+    const ENABLING: &str = include_str!("../../../web/tests/fixtures/nc_SIS_enabling.xml");
+
+    #[test]
+    fn a_schedule_is_enabled_or_disabled_from_a_time() {
+        let mut session = solvable();
+        session.add_file("nc_RA.xml", RA);
+        session.add_file("enabling.xml", ENABLING);
+        let schedule = "_00000000-0000-4000-8000-000000000911";
+        let guided = session.edit_guided(schedule);
+        assert_eq!(guided["pointClass"], "GridStateAlterationTimePoint");
+        assert_eq!(guided["points"][0]["enabled"], "true");
+        // A new point.
+        let set = session.edit_enabling(schedule, "2026-01-01T10:00:00Z", false, &random());
+        assert_eq!(set["error"], Value::Null, "{set}");
+        let points = session.edit_guided(schedule)["points"].clone();
+        assert_eq!(points.as_array().unwrap().len(), 2);
+        assert_eq!(
+            (points[1]["at"].clone(), points[1]["enabled"].clone()),
+            (json!("2026-01-01T10:00:00Z"), json!("false"))
+        );
+        // The point at that time changed, none added.
+        session.edit_enabling(schedule, "2026-01-01T10:00:00Z", true, &random());
+        let points = session.edit_guided(schedule)["points"].clone();
+        assert_eq!(points.as_array().unwrap().len(), 2);
+        assert_eq!(points[1]["enabled"], "true");
+        assert!(
+            session.edit_enabling(schedule, "ten o'clock", true, &random())["error"].is_string()
+        );
+        // Not on what has no enabling points.
+        assert!(
+            session.edit_enabling(
+                "_00000000-0000-4000-8000-000000000d02",
+                "2026-01-01T10:00:00Z",
+                true,
+                &random()
+            )["error"]
+                .is_string()
+        );
+        assert_eq!(
+            session.edit_guided("_00000000-0000-4000-8000-000000000d02"),
+            Value::Null
+        );
+    }
+
     const CURATIVE: &str = include_str!("../../../web/tests/fixtures/nc_RA_curative.xml");
 
     /// The analysis with curative actions, schedules read `at` a time.
