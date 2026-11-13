@@ -117,9 +117,9 @@ async function handle(request: Request): Promise<string> {
     case 'schedules':
       return session.schedules();
     case 'powerFlow':
-      return session.powerFlow(request.sharing, request.qLimits);
+      return session.powerFlow(request.sharing, request.qLimits, request.switches, request.action ?? undefined);
     case 'analysisStart':
-      return session.analysisStart(request.sharing, request.qLimits);
+      return session.analysisStart(request.sharing, request.qLimits, request.switches);
     case 'analysisStep':
       return session.analysisStep(request.count);
     case 'analysisResult':

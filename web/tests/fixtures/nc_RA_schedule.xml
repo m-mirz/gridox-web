@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An intensity schedule for nc_RA.xml's "TA closed": from 10:00 on (previous), the breaker
+     open, which replaces its range's 0.0 at grid_SV.xml's scenario time, 12:00. -->
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:nc="https://cim4.eu/ns/nc#"
+    xmlns:cim="https://cim.ucaiug.io/ns#"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:dcat="http://www.w3.org/ns/dcat#" >
+  <dcat:Dataset rdf:about="urn:uuid:00000000-0000-4000-8000-000000000f09">
+    <dcterms:conformsTo rdf:resource="https://ap.cim4.eu/RemedialActionSchedule/2.4"/>
+  </dcat:Dataset>
+  <nc:GridStateIntensitySchedule rdf:ID="_00000000-0000-4000-8000-000000000801">
+    <cim:IdentifiedObject.name>TA closed, opened</cim:IdentifiedObject.name>
+    <nc:BaseTimeSeries.interpolationKind rdf:resource="https://cim4.eu/ns/nc#TimeSeriesInterpolationKind.previous"/>
+    <nc:GridStateIntensitySchedule.GridStateAlteration rdf:resource="#_00000000-0000-4000-8000-000000000d12"/>
+    <nc:GridStateIntensitySchedule.valueKind rdf:resource="https://cim4.eu/ns/nc#ValueOffsetKind.absolute"/>
+  </nc:GridStateIntensitySchedule>
+  <nc:GenericValueTimePoint rdf:ID="_00000000-0000-4000-8000-000000000802">
+    <nc:GenericValueTimePoint.GenericValueSchedule rdf:resource="#_00000000-0000-4000-8000-000000000801"/>
+    <nc:GenericValueTimePoint.atTime>2026-01-01T10:00:00Z</nc:GenericValueTimePoint.atTime>
+    <nc:GenericValueTimePoint.value>1.0</nc:GenericValueTimePoint.value>
+  </nc:GenericValueTimePoint>
+</rdf:RDF>
