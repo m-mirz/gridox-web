@@ -35,10 +35,18 @@ validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/ta
 repository at a fixed commit (`web/src/example.ts`, its file list in `example-files.json`): the
 only request the page makes to another site, and only when asked. The site ships none of it.
 
+## The guide
+
+The Guide view walks through the SV-IOP 2026 report's use cases on the example, a step each: what
+the report asks, what to look at, what ReliCapGrid gives (its data's known problems included), and
+"Show me", which ticks in the files the use case needs and goes there. The steps are in
+`web/src/guide.ts`; the acceptance tests follow every one, so a step that no longer shows what it
+says fails a test.
+
 ## Keys
 
-1 to 6 go to the views (Explore, Validation, Network codes, Power flow, Contingencies, Data
-quality), / to the search, Escape closes the inspector, and Ctrl or ⌘ with Z undoes the last edit.
+1 to 7 go to the views (Explore, Validation, Network codes, Power flow, Contingencies, Data
+quality, Guide), / to the search, Escape closes the inspector, and Ctrl or ⌘ with Z undoes the last edit.
 
 ## Licences
 

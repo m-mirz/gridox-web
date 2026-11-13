@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_GRID, ALL_NC, AREAS, BOUNDARY, CGM, CO, COMMON, EVERYTHING, PRESENT, REFERENCE, ROOT, SUPPLIED_SAR, area, withBoundary } from './relicapgrid/files';
+import { STEPS } from '../src/guide';
 import { at, validated, view } from './views';
 
 /** cimoxide's CLI, to validate what the app writes: `$CIMCLI`, else a release build beside this checkout. */
@@ -114,6 +115,35 @@ test('the example loads the whole instance, one IGM chosen from it', async ({ pa
   await solve(page);
   await expect(page.getByTestId('pf-verdict')).toHaveText(PF.Svedala.verdict);
 });
+});
+
+// The guide, step by step: each "Show me" ticks in its files and goes where the use case is seen,
+// and what the step says it gives is there.
+test.describe('the guide', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('every step of the SV-IOP 2026 guide shows what it says', async ({ page }) => {
+    test.setTimeout(1_200_000);
+    await page.route('https://raw.githubusercontent.com/**', async (route) => {
+      const path = decodeURIComponent(new URL(route.request().url()).pathname.split('/Instance/')[1]);
+      await route.fulfill({ status: 200, path: join(ROOT, path), headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.getByRole('button', { name: 'Follow the SV-IOP 2026 guide' }).click();
+    await expect(page.getByTestId('guide')).toBeVisible({ timeout: 200_000 });
+    for (const step of STEPS) {
+      await test.step(step.id, async () => {
+        await view(page, 'Guide');
+        await page.getByTestId('guide').getByRole('button', { name: step.title }).click();
+        await page.getByTestId('guide-step').getByRole('button', { name: 'Show me' }).click();
+        // Done when its button says so again, hidden behind the view it went to.
+        await expect(page.getByTestId('guide-step').locator('button.primary')).toHaveText('Show me', { timeout: 200_000 });
+        await validated(page, 200_000);
+        const shown = page.locator('.view:not([hidden])');
+        if (step.check.press) await shown.getByRole('button', { name: step.check.press }).click();
+        await expect(shown.getByTestId(step.check.testid).first()).toContainText(step.check.text, { timeout: 300_000 });
+      });
+    }
+  });
 });
 
 // The same by the headers: the files Svedala made and the common data's, from the presets.
