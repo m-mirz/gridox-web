@@ -444,7 +444,7 @@ dependencies = [
 [[package]]
 name = "gridoxide"
 version = "0.6.0"
-source = "git+https://github.com/m-mirz/gridoxide?branch=curative-actions#8dbf67c541fb7babac1dec1dd7c6c1a3e9b4a4cb"
+source = "git+https://github.com/m-mirz/gridoxide?rev=0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd#0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd"
 dependencies = [
  "cimoxide-model",
  "faer",
@@ -459,7 +459,7 @@ dependencies = [
 [[package]]
 name = "gridoxide-core"
 version = "0.6.0"
-source = "git+https://github.com/m-mirz/gridoxide?branch=curative-actions#8dbf67c541fb7babac1dec1dd7c6c1a3e9b4a4cb"
+source = "git+https://github.com/m-mirz/gridoxide?rev=0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd#0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd"
 dependencies = [
  "faer",
  "gridoxide-sparse",
@@ -471,7 +471,7 @@ dependencies = [
 [[package]]
 name = "gridoxide-sparse"
 version = "0.6.0"
-source = "git+https://github.com/m-mirz/gridoxide?branch=curative-actions#8dbf67c541fb7babac1dec1dd7c6c1a3e9b4a4cb"
+source = "git+https://github.com/m-mirz/gridoxide?rev=0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd#0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd"
 dependencies = [
  "faer",
  "num-complex",
