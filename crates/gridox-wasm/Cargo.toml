@@ -11,9 +11,9 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cimmodel = { package = "cimoxide-model", version = "0.6.1" }
-cimvalidation = { package = "cimoxide-validation", version = "0.6.1" }
-cimview = { package = "cimoxide-view", version = "0.6.1" }
+cimmodel = { package = "cimoxide-model", version = "0.6.2" }
+cimvalidation = { package = "cimoxide-validation", version = "0.6.2" }
+cimview = { package = "cimoxide-view", version = "0.6.2" }
 gridoxide = { version = "0.5.0", default-features = false, features = ["cgmes"] }
 console_error_panic_hook = "0.1"
 serde = { version = "1", features = ["derive"] }

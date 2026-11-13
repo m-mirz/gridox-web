@@ -115,6 +115,106 @@ impl JsSession {
         self.0.analysis_step(count).to_string()
     }
 
+    #[wasm_bindgen(js_name = editState)]
+    pub fn edit_state(&self) -> String {
+        self.0.edit_state().to_string()
+    }
+
+    #[wasm_bindgen(js_name = fileText)]
+    pub fn file_text(&self, name: &str) -> Option<String> {
+        self.0.file_text(name).map(str::to_string)
+    }
+
+    #[wasm_bindgen(js_name = editUndo)]
+    pub fn edit_undo(&mut self) -> String {
+        self.0.edit_undo().to_string()
+    }
+
+    #[wasm_bindgen(js_name = editRename)]
+    pub fn edit_rename(&mut self, old: &str, new: &str) -> String {
+        self.0.edit_rename(old, new).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editDeletePreview)]
+    pub fn edit_delete_preview(&mut self, id: &str, contained: bool) -> String {
+        self.0.edit_delete_preview(id, contained).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editDelete)]
+    pub fn edit_delete(&mut self, id: &str, contained: bool) -> String {
+        self.0.edit_delete(id, contained).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editAddable)]
+    pub fn edit_addable(&mut self, parent: &str) -> String {
+        self.0.edit_addable(parent).to_string()
+    }
+
+    /// An object added; `random` gives its identifier, 16 bytes a draw.
+    #[wasm_bindgen(js_name = editAdd)]
+    pub fn edit_add(
+        &mut self,
+        parent: &str,
+        class: &str,
+        name: Option<String>,
+        random: &[u8],
+    ) -> String {
+        self.0
+            .edit_add(parent, class, name.as_deref(), random)
+            .to_string()
+    }
+
+    #[wasm_bindgen(js_name = editSet)]
+    pub fn edit_set(&mut self, id: &str, key: &str, value: &str) -> String {
+        self.0.edit_set(id, key, value).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editRemove)]
+    pub fn edit_remove(&mut self, id: &str, key: &str) -> String {
+        self.0.edit_remove(id, key).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editForm)]
+    pub fn edit_form(&mut self, id: &str) -> String {
+        self.0.edit_form(id).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editCandidates)]
+    pub fn edit_candidates(&mut self, id: &str, key: &str) -> String {
+        self.0.edit_candidates(id, key).to_string()
+    }
+
+    #[wasm_bindgen(js_name = editFixes)]
+    pub fn edit_fixes(&mut self, id: &str) -> String {
+        self.0.edit_fixes(id).to_string()
+    }
+
+    /// Edits from [`JsSession::edit_fixes`], as JSON, at the revision they were offered for.
+    #[wasm_bindgen(js_name = editApply)]
+    pub fn edit_apply(&mut self, revision: f64, edits: &str) -> Result<String, JsError> {
+        let edits: serde_json::Value = serde_json::from_str(edits)?;
+        Ok(self.0.edit_apply(revision as u64, &edits).to_string())
+    }
+
+    /// RA_UC4's counter-proposal to schedule `refused`, in a new file; `random` gives the
+    /// identifiers, 16 bytes a draw.
+    #[wasm_bindgen(js_name = editCounterProposal)]
+    pub fn edit_counter_proposal(
+        &mut self,
+        refused: &str,
+        responding: Option<String>,
+        random: &[u8],
+    ) -> String {
+        self.0
+            .edit_counter_proposal(refused, responding.as_deref(), random)
+            .to_string()
+    }
+
+    #[wasm_bindgen(js_name = editResponders)]
+    pub fn edit_responders(&self) -> String {
+        self.0.edit_responders().to_string()
+    }
+
     #[wasm_bindgen(js_name = analysisRange)]
     pub fn analysis_range(&mut self, from: usize, to: usize) -> String {
         self.0.analysis_range(from, to).to_string()

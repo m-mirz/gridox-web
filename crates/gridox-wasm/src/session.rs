@@ -14,6 +14,7 @@ use cimview::{Locations, mrid_of};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+mod edit;
 mod power_flow;
 mod security;
 
@@ -114,6 +115,8 @@ pub struct Session {
     facts: Option<Facts>,
     /// A security analysis under way or done; gone when a file comes in.
     analysis: Option<security::Analysis>,
+    /// The loaded files' texts, as they are now: an edit changes them.
+    texts: edit::Texts,
 }
 
 struct Views {
@@ -159,6 +162,7 @@ impl Session {
                 Ok(dataset) => {
                     let objects = dataset.entries.len();
                     self.dataset.merge(dataset);
+                    self.texts.add(name, text);
                     self.views = None;
                     self.validated = None;
                     self.facts = None;
@@ -2245,6 +2249,196 @@ mod tests {
             bare.analysis_start(PowerFlowOptions::default())["error"]
                 .as_str()
                 .is_some()
+        );
+    }
+
+    const LOAD: &str = "_00000000-0000-4000-8000-000000000a31";
+
+    fn changed(result: &Value) -> Vec<&str> {
+        assert_eq!(result["error"], Value::Null, "{result}");
+        result["changed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn renaming_reaches_every_file_and_can_be_undone() {
+        let mut session = solvable();
+        let result = session.edit_rename(BREAKER, "_breaker-a");
+        assert_eq!(changed(&result), ["grid_EQ.xml", "grid_state.xml"]);
+        assert!(session.object(BREAKER).is_null());
+        assert_eq!(session.object("_breaker-a")["label"], "Breaker A");
+        assert!(
+            session
+                .file_text("grid_EQ.xml")
+                .unwrap()
+                .contains(r##"rdf:resource="#_breaker-a""##)
+        );
+        assert_eq!(
+            session.edit_state()["edited"],
+            json!(["grid_EQ.xml", "grid_state.xml"])
+        );
+        assert!(
+            session.edit_rename("_breaker-a", "_00000000-0000-4000-8000-000000000a31")["error"]
+                .is_string()
+        );
+        let undone = session.edit_undo();
+        assert_eq!(changed(&undone), ["grid_EQ.xml", "grid_state.xml"]);
+        assert_eq!(session.file_text("grid_EQ.xml"), Some(GRID));
+        assert_eq!(session.object(BREAKER)["label"], "Breaker A");
+    }
+
+    #[test]
+    fn a_value_set_changes_the_model_and_what_is_solved_from_it() {
+        let mut session = solvable();
+        let before = session.power_flow(PowerFlowOptions::default());
+        assert_eq!(
+            changed(&session.edit_set(LOAD, "EnergyConsumer.p", "80")),
+            ["grid_state.xml"]
+        );
+        let after = session.power_flow(PowerFlowOptions::default());
+        let loading = |f: &Value| f["overlay"]["flows"][LINE]["loading"].as_f64().unwrap();
+        assert!(
+            loading(&after) > loading(&before) + 50.0,
+            "{} {}",
+            loading(&before),
+            loading(&after)
+        );
+        // A field written nowhere is added; one removed is gone.
+        changed(&session.edit_set(LOAD, "IdentifiedObject.description", "the town & the mill"));
+        assert!(
+            session
+                .file_text("grid_EQ.xml")
+                .unwrap()
+                .contains("the town &amp; the mill")
+        );
+        changed(&session.edit_remove(LOAD, "IdentifiedObject.description"));
+        assert_eq!(session.file_text("grid_EQ.xml"), Some(GRID));
+        assert!(session.edit_set(LOAD, "ACLineSegment.r", "1")["error"].is_string());
+    }
+
+    #[test]
+    fn deleting_takes_the_references_with_it() {
+        let mut session = solvable();
+        let preview = session.edit_delete_preview(LOAD, false);
+        assert_eq!(
+            (preview["objects"].clone(), preview["references"].clone()),
+            (json!(1), json!(1))
+        );
+        changed(&session.edit_delete(LOAD, false));
+        assert!(session.object(LOAD).is_null());
+        let terminal = session.object("_00000000-0000-4000-8000-000000000a42");
+        assert!(
+            !terminal["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["key"] == "Terminal.ConductingEquipment")
+        );
+        // A voltage level with what it holds.
+        let level = session.edit_delete_preview("_00000000-0000-4000-8000-000000000a11", true);
+        assert!(level["contained"].as_u64().unwrap() >= 2, "{level}");
+    }
+
+    #[test]
+    fn an_object_is_added_in_its_container_with_a_fresh_identifier() {
+        let mut session = solvable();
+        let level = "_00000000-0000-4000-8000-000000000a11";
+        let classes = session.edit_addable(level);
+        assert!(
+            classes
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["class"] == "Breaker"),
+            "{classes}"
+        );
+        let random: Vec<u8> = (0..32).collect();
+        let added = session.edit_add(level, "Breaker", Some("Breaker C"), &random);
+        assert_eq!(changed(&added), ["grid_EQ.xml"]);
+        let id = added["id"].as_str().unwrap();
+        assert_eq!(
+            id,
+            format!("_{}", cimview::edit::uuid(std::array::from_fn(|i| i as u8)))
+        );
+        assert_eq!(session.object(id)["label"], "Breaker C");
+        assert_eq!(session.views().tree.containers(id), ["Anvil", "Anvil 110"]);
+        assert!(session.edit_add(level, "Breaker", None, &[])["error"].is_string());
+    }
+
+    #[test]
+    fn a_counter_proposal_refuses_a_schedule_with_a_copy_in_a_dataset_of_its_own() {
+        let mut session = with_ras();
+        let refused = e("501");
+        let random: Vec<u8> = (0..160).collect();
+        let made = session.edit_counter_proposal(&refused, None, &random);
+        assert_eq!(changed(&made), ["nc_RAS_counter-proposal.xml"]);
+        let text = session
+            .file_text("nc_RAS_counter-proposal.xml")
+            .unwrap()
+            .to_string();
+        // The header, under a new identifier; the copies, once each; the points not active.
+        assert!(text.contains("<dcterms:conformsTo rdf:resource=\"https://ap.cim4.eu/RemedialActionSchedule/2.4\"/>"), "{text}");
+        assert!(!text.contains("000000000f05"), "{text}");
+        assert_eq!(text.matches("<nc:EventTimePoint ").count(), 2, "{text}");
+        assert_eq!(
+            text.matches("<nc:EventTimePoint.isActive>false<").count(),
+            2,
+            "{text}"
+        );
+        let schedule = made["id"].as_str().unwrap();
+        let dependency = session.object(schedule)["referrers"].to_string();
+        assert!(
+            dependency.contains("RemedialActionScheduleDependency.ProposedRemedialActionSchedule"),
+            "{dependency}"
+        );
+        let old = session.object(&refused)["referrers"].to_string();
+        assert!(
+            old.contains("RemedialActionScheduleResponse.RemedialActionSchedule"),
+            "{old}"
+        );
+        // One edit: undone, the file is gone.
+        let undone = session.edit_undo();
+        assert_eq!(undone["removed"], json!(["nc_RAS_counter-proposal.xml"]));
+        assert!(session.file_text("nc_RAS_counter-proposal.xml").is_none());
+        assert!(session.object(schedule).is_null());
+        assert!(session.edit_counter_proposal(&e("502"), None, &random)["error"].is_string());
+    }
+
+    #[test]
+    fn a_fix_for_a_finding_takes_it_away_and_a_stale_one_is_refused() {
+        let mut session = solvable();
+        session.check_file("grid_EQ.xml", GRID).unwrap();
+        session.check_file("grid_state.xml", STATE).unwrap();
+        session.check_file("grid_SV.xml", SV).unwrap();
+        session.validate(Checks::default());
+        // The first object a fix is offered for.
+        let ids: Vec<String> = session.dataset.entries.keys().cloned().collect();
+        let (id, fixes) = ids
+            .iter()
+            .find_map(|id| {
+                let found = session.edit_fixes(id);
+                (!found["fixes"].as_array().unwrap().is_empty()).then(|| (id.clone(), found))
+            })
+            .expect("a fix somewhere");
+        let fix = &fixes["fixes"][0];
+        let revision = fixes["revision"].as_u64().unwrap();
+        assert!(session.edit_apply(revision + 1, &fix["edits"])["error"].is_string());
+        changed(&session.edit_apply(revision, &fix["edits"]));
+        assert!(
+            session.edit_apply(revision, &fix["edits"])["error"].is_string(),
+            "stale after an edit"
+        );
+        let form = session.edit_form(&id);
+        assert!(
+            form["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["written"] == true)
         );
     }
 
