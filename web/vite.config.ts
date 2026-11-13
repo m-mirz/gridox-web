@@ -14,7 +14,8 @@ function contentSecurityPolicy(): Plugin {
     "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self'",
     "img-src 'self' data:",
-    "connect-src 'self'",
+    // The example, and only when asked for: ReliCapGrid's files from its repository.
+    "connect-src 'self' https://raw.githubusercontent.com",
     "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

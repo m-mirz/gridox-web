@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { droppedFiles } from './drop';
+  import { ATTRIBUTION, COMMIT, FILES, LICENSE, MEGABYTES, REPOSITORY, fetchExample } from './example';
   import { forget, remembered } from './folder.svelte';
   import { findingsText } from './grid/model';
   import type { Reveal } from './grid/model';
@@ -240,6 +241,22 @@
   });
   const NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
 
+  /** The example being fetched: how far it has come. */
+  let fetching = $state<{ done: number; total: number } | null>(null);
+
+  async function loadExample() {
+    notice = null;
+    fetching = { done: 0, total: FILES.length };
+    try {
+      const { files, paths } = await fetchExample((done, total) => (fetching = { done, total }));
+      fetching = null;
+      await run({ kind: 'load', files, paths });
+    } catch (failure) {
+      fetching = null;
+      notice = `The example could not be fetched: ${failure}`;
+    }
+  }
+
   /** The edits made, for the top bar's Undo and count; asked again whenever the model changes. */
   let editing = $state.raw<EditState | null>(null);
   $effect(() => {
@@ -438,6 +455,18 @@
       <h2>Open a model</h2>
       <p class="sub">CGMES and Network Code files, a zip of them or their folder: read on this machine, never uploaded.</p>
       <DropZone {busy} compact={false} onfiles={(files, paths) => run({ kind: 'load', files, paths })} />
+      <div class="example" data-testid="example">
+        <button type="button" disabled={busy || !!fetching} onclick={loadExample}>Load an example: ReliCapGrid</button>
+        {#if fetching}
+          <span class="sub" role="status"><progress max={fetching.total} value={fetching.done}></progress> {fetching.done} of {fetching.total} files</span>
+        {:else}
+          <span class="sub">
+            ENTSO-E's test configuration, {FILES.length} files (about {MEGABYTES} MB) fetched from its
+            <a href={`${REPOSITORY}/tree/${COMMIT}`} target="_blank" rel="noopener">repository</a> when you ask: the only request to another
+            site. {ATTRIBUTION} (<a href={LICENSE} target="_blank" rel="noopener">licence</a>).
+          </span>
+        {/if}
+      </div>
       <p class="sub about" data-testid="about">
         gridox is free software under the Apache License 2.0, with libraries under their own licences, LGPL-2.1-or-later code among
         them: see the <a href="./third-party-licenses.txt" target="_blank" rel="noopener">licences</a>, and the
@@ -606,6 +635,19 @@
 
   .welcome p {
     margin: 0 0 0.5rem;
+  }
+
+  .example {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .example span {
+    flex: 1 1 18rem;
+    font-size: 0.85rem;
   }
 
   .welcome .about {

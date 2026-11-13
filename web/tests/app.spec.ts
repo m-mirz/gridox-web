@@ -191,6 +191,29 @@ test('the policy against other sites is in the page', async ({ page }) => {
   await expect(policy).toHaveAttribute('content', /default-src 'self'/);
 });
 
+test.describe('the example', () => {
+  // Without the service worker, through which WebKit's requests would pass the stand-in below.
+  test.use({ serviceWorkers: 'block' });
+
+test('loads an example from its repository, and says whose it is', async ({ page }) => {
+  // GitHub stood in for: every file the same small model, each request noted.
+  const asked: string[] = [];
+  const model = readFileSync(EQ, 'utf8');
+  await page.route('https://raw.githubusercontent.com/**', async (route) => {
+    asked.push(route.request().url());
+    await route.fulfill({ status: 200, body: model, headers: { 'access-control-allow-origin': '*' } });
+  });
+  const example = page.getByTestId('example');
+  await expect(example).toContainText('ReliCapGrid © ENTSO-E, under CC BY-SA 4.0');
+  await example.getByRole('button', { name: 'Load an example: ReliCapGrid' }).click();
+  await expect(page.getByTestId('totals')).toContainText('from 160 files', { timeout: 60_000 });
+  expect(asked).toHaveLength(160);
+  expect(asked.every((url) => url.startsWith('https://raw.githubusercontent.com/entsoe/relicapgrid/f09bb340795122b43d6499e913c121bb21458859/Instance/'))).toBe(true);
+  await expect(page.getByTestId('example-attribution')).toContainText('ReliCapGrid © ENTSO-E');
+  await expect(page.getByTestId('file-tree').getByLabel('Folder Svedala in the model')).toBeVisible();
+});
+});
+
 test('says what software it carries, under which licences, and links to it', async ({ page }) => {
   const link = page.getByTestId('about').getByRole('link', { name: 'licences' });
   await expect(link).toHaveAttribute('href', './third-party-licenses.txt');

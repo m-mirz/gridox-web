@@ -1,5 +1,6 @@
 <script lang="ts">
   import { folder } from '../folder.svelte';
+  import { ATTRIBUTION, FOLDER, LICENSE, REPOSITORY } from '../example';
   import type { WorkerClient } from '../worker/client';
   import type { FindingsSummary, Summary } from '../worker/protocol';
   import DropZone from './DropZone.svelte';
@@ -115,6 +116,12 @@
     <FolderBar {client} {version} {names} ready={!checking && findings !== null} />
     <EditedFiles {client} {version} {findings} {checking} folderOpen={folder.connected} {onundo} />
     <SummaryView {summary} part="files" />
+    {#if Object.values(paths).some((p) => p.startsWith(`${FOLDER}/`))}
+      <p class="sub small" data-testid="example-attribution">
+        The example: <a href={REPOSITORY} target="_blank" rel="noopener">{ATTRIBUTION}</a>
+        (<a href={LICENSE} target="_blank" rel="noopener">licence</a>).
+      </p>
+    {/if}
     <FileTree {summary} {paths} {busy} {onexclude} />
     <div class="actions">
       <button type="button" disabled={busy} onclick={onclear}>Clear</button>
