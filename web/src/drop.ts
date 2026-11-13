@@ -14,7 +14,7 @@ async function entriesOf(directory: FileSystemDirectoryEntry): Promise<FileSyste
 const fileOf = (entry: FileSystemFileEntry) => new Promise<File>((resolve, reject) => entry.file(resolve, reject));
 
 /** A folder's XML files and zip archives, in its subfolders too, by path. A model's folder also holds what is not one. */
-async function xmlIn(directory: FileSystemDirectoryEntry): Promise<File[]> {
+async function xmlIn(directory: FileSystemDirectoryEntry): Promise<{ path: string; file: File }[]> {
   const found: { path: string; file: File }[] = [];
   const walk = async (folder: FileSystemDirectoryEntry) => {
     for (const entry of await entriesOf(folder)) {
@@ -26,7 +26,7 @@ async function xmlIn(directory: FileSystemDirectoryEntry): Promise<File[]> {
   };
   await walk(directory);
   found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return found.map(({ file }) => file);
+  return found.map(({ path, file }) => ({ path: path.replace(/^\//, ''), file }));
 }
 
 /**
@@ -34,16 +34,18 @@ async function xmlIn(directory: FileSystemDirectoryEntry): Promise<File[]> {
  * name: what cannot be used is then reported. Empty if what was dragged is not files, as from an
  * editor, which may give only their addresses.
  */
-export async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
+export async function droppedFiles(transfer: DataTransfer): Promise<{ files: File[]; paths: string[] }> {
   // A drop's items are gone once the event is over, so all of them are taken before anything waits.
   const taken = [...transfer.items]
     .filter((item) => item.kind === 'file')
     .map((item) => ({ entry: item.webkitGetAsEntry(), file: item.getAsFile() }));
-  if (!taken.length) return [...transfer.files];
-  const files = await Promise.all(
-    taken.map(async ({ entry, file }) =>
-      entry?.isDirectory ? xmlIn(entry as FileSystemDirectoryEntry) : file ? [file] : [],
-    ),
-  );
-  return files.flat();
+  if (!taken.length) return { files: [...transfer.files], paths: [...transfer.files].map((f) => f.name) };
+  const found = (
+    await Promise.all(
+      taken.map(async ({ entry, file }) =>
+        entry?.isDirectory ? xmlIn(entry as FileSystemDirectoryEntry) : file ? [{ path: file.name, file }] : [],
+      ),
+    )
+  ).flat();
+  return { files: found.map((f) => f.file), paths: found.map((f) => f.path) };
 }

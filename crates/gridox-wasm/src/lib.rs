@@ -162,6 +162,12 @@ impl JsSession {
         self.0.edit_state().to_string()
     }
 
+    /// The model made of the files loaded but these; see [`Session::set_excluded`].
+    #[wasm_bindgen(js_name = setExcluded)]
+    pub fn set_excluded(&mut self, excluded: Vec<String>) {
+        self.0.set_excluded(&excluded);
+    }
+
     #[wasm_bindgen(js_name = fileText)]
     pub fn file_text(&self, name: &str) -> Option<String> {
         self.0.file_text(name).map(str::to_string)

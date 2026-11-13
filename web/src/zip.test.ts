@@ -23,6 +23,7 @@ describe('unzipped', () => {
       ['a_EQ.xml', '<eq/>'],
       ['b_SSH.xml', '<ssh/>'],
     ]);
+    expect(out.paths).toEqual(['first.xml', 'Model.ZIP/model/a_EQ.xml', 'Model.ZIP/model/b_SSH.xml']);
     expect(out.failed).toEqual([]);
   });
 
@@ -34,6 +35,7 @@ describe('unzipped', () => {
       ['EQ.xml', '<eq/>'],
       ['TP.xml', '<tp/>'],
     ]);
+    expect(out.paths).toEqual(['cgm.zip/EQ.xml', 'cgm.zip/igm/inner.zip/TP.xml']);
   });
 
   it('says which archives it could not read, and keeps the rest', async () => {

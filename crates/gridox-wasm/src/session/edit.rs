@@ -27,6 +27,8 @@ pub(super) struct Texts {
     history: Vec<Vec<(String, Option<String>)>>,
     /// Counts the changes, so that an edit offered for one state is not applied to another.
     revision: u64,
+    /// The files loaded but left out of the model, by name: their texts kept for when they come back.
+    pub(super) aside: Vec<(String, String)>,
 }
 
 impl Texts {
@@ -130,13 +132,52 @@ impl Session {
         })
     }
 
-    /// A file's text as it is now.
+    /// A file's text as it is now, in the model or left out of it.
     pub fn file_text(&self, name: &str) -> Option<&str> {
         self.texts
             .files
             .iter()
+            .chain(&self.texts.aside)
             .find(|(n, _)| n == name)
             .map(|(_, t)| t.as_str())
+    }
+
+    /// The model made of the files loaded but `excluded`, in the order they were loaded; the others
+    /// kept aside, as they are now, to come back. The undo history goes, as an edit may have
+    /// changed a file now left out.
+    pub fn set_excluded(&mut self, excluded: &[String]) {
+        let now: Vec<&str> = self.texts.aside.iter().map(|(n, _)| n.as_str()).collect();
+        let mut asked: Vec<&str> = excluded.iter().map(String::as_str).collect();
+        asked.retain(|n| {
+            self.texts
+                .files
+                .iter()
+                .chain(&self.texts.aside)
+                .any(|(f, _)| f == n)
+        });
+        let (mut a, mut b) = (now.clone(), asked.clone());
+        a.sort_unstable();
+        b.sort_unstable();
+        if a == b {
+            return;
+        }
+        let order: Vec<String> = self
+            .files
+            .iter()
+            .filter_map(|f| match f {
+                super::FileOutcome::Loaded { name, .. } => Some(name.clone()),
+                super::FileOutcome::Skipped { .. } => None,
+            })
+            .collect();
+        let mut all: Vec<(String, String)> = std::mem::take(&mut self.texts.files);
+        all.append(&mut self.texts.aside);
+        all.sort_by_key(|(n, _)| order.iter().position(|o| o == n).unwrap_or(usize::MAX));
+        let (aside, files): (Vec<_>, Vec<_>) =
+            all.into_iter().partition(|(n, _)| excluded.contains(n));
+        self.texts.files = files;
+        self.texts.aside = aside;
+        self.texts.history.clear();
+        self.reload();
     }
 
     /// The last edit undone; a file it created, gone.

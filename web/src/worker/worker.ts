@@ -3,7 +3,7 @@
 
 import init, { Session } from '../wasm/gridox_wasm';
 import type { Envelope, FileOutcome, Reply, Request } from './protocol';
-import { forget, keep, kept, remove, replace } from './store';
+import { forget, keep, keepMeta, kept, keptMeta, remove, replace } from './store';
 import { unzipped } from '../zip';
 
 let session: Session;
@@ -15,9 +15,17 @@ const ready = init().then(() => {
 let keeping = false;
 /** The files loaded, in the order they came, for validation to read again. */
 let files: File[] = [];
+/** Each file's path in the folder or archive it came from, by name. */
+let paths: Record<string, string> = {};
+/** The files loaded but left out of the model, by name. */
+let excluded: string[] = [];
 
 function loaded(): string {
-  return `{"summary":${session.summary()},"kept":${keeping}}`;
+  return `{"summary":${session.summary()},"kept":${keeping},"paths":${JSON.stringify(paths)}}`;
+}
+
+async function keepAbout() {
+  if (keeping) await keepMeta({ paths, excluded });
 }
 
 async function add(files: File[]): Promise<File[]> {
@@ -69,17 +77,22 @@ async function handle(request: Request): Promise<string> {
   switch (request.kind) {
     case 'load': {
       // A zip's XML files in its place: they, not the archive, are what is kept.
-      const { files: opened, failed } = await unzipped(request.files);
+      const { files: opened, paths: at, failed } = await unzipped(request.files, request.paths ?? []);
       for (const { name, reason } of failed) session.skipFile(name, reason);
       const added = await add(opened);
+      for (const file of added) paths[file.name] = at[opened.indexOf(file)] ?? file.name;
       files.push(...added);
       if (added.length) keeping = await keep(added);
+      await keepAbout();
       return loaded();
     }
     case 'restore': {
       const added = await add(await kept());
       files = added;
       keeping = added.length > 0;
+      ({ paths, excluded } = await keptMeta());
+      excluded = excluded.filter((name) => added.some((f) => f.name === name));
+      if (excluded.length) session.setExcluded(excluded);
       return loaded();
     }
     case 'clear':
@@ -87,7 +100,14 @@ async function handle(request: Request): Promise<string> {
       session = new Session();
       keeping = false;
       files = [];
+      paths = {};
+      excluded = [];
       await forget().catch(() => {});
+      return loaded();
+    case 'include':
+      excluded = request.excluded.filter((name) => files.some((f) => f.name === name));
+      session.setExcluded(excluded);
+      await keepAbout();
       return loaded();
     case 'grid':
       return session.grid();
@@ -102,7 +122,9 @@ async function handle(request: Request): Promise<string> {
     case 'object':
       return session.object(request.id);
     case 'validate':
-      for (const file of files) session.checkFile(file.name, await file.text());
+      for (const file of files) {
+        if (!excluded.includes(file.name)) session.checkFile(file.name, await file.text());
+      }
       return session.validate(request.common, request.quality);
     case 'findings':
       return session.findingsOf(request.rule);
@@ -196,7 +218,9 @@ async function handle(request: Request): Promise<string> {
 self.onmessage = async ({ data: { id, request } }: MessageEvent<Envelope>) => {
   let reply: Reply;
   try {
-    reply = { id, ok: true, json: await handle(request), ...(request.kind === 'files' ? { files } : {}) };
+    // The model's files: those left out of it are not another worker's to load.
+    const model = () => files.filter((f) => !excluded.includes(f.name));
+    reply = { id, ok: true, json: await handle(request), ...(request.kind === 'files' ? { files: model() } : {}) };
   } catch (error) {
     reply = { id, ok: false, error: String(error) };
   }

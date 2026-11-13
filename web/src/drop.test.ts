@@ -35,7 +35,7 @@ const item = (entry: FileSystemEntry | null, f: File | null = null) => ({
 });
 
 const transfer = (items: unknown[], files: File[] = []) => ({ items, files }) as unknown as DataTransfer;
-const names = (files: File[]) => files.map((f) => f.name);
+const names = ({ files }: { files: File[] }) => files.map((f) => f.name);
 
 describe('droppedFiles', () => {
   it('takes files as they are, whatever their name', async () => {
@@ -55,13 +55,15 @@ describe('droppedFiles', () => {
       folder('/m/sub', [fileEntry('/m/sub/b.XML')]),
       fileEntry('/m/a.xml'),
     ]);
-    expect(names(await droppedFiles(transfer([item(dir)])))).toEqual(['a.xml', 'c.xml', 'b.XML']);
+    const found = await droppedFiles(transfer([item(dir)]));
+    expect(names(found)).toEqual(['a.xml', 'c.xml', 'b.XML']);
+    expect(found.paths).toEqual(['m/a.xml', 'm/c.xml', 'm/sub/b.XML']);
   });
 
   it('has nothing for what is not files', async () => {
     const uri = { kind: 'string', webkitGetAsEntry: () => null, getAsFile: () => null };
-    expect(await droppedFiles(transfer([uri]))).toEqual([]);
-    expect(await droppedFiles(transfer([]))).toEqual([]);
+    expect(await droppedFiles(transfer([uri]))).toEqual({ files: [], paths: [] });
+    expect(await droppedFiles(transfer([]))).toEqual({ files: [], paths: [] });
   });
 
   it('falls back on the list of files', async () => {

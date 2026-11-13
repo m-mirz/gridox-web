@@ -7,22 +7,29 @@
 /** What reading the files came to: the files to load, and the archives that could not be read. */
 export interface Unzipped {
   files: File[];
+  /** Each file's path: the one given for it, or inside its archive after the archive's. */
+  paths: string[];
   failed: { name: string; reason: string }[];
 }
 
 const isZip = (name: string) => name.toLowerCase().endsWith('.zip');
 const isXml = (name: string) => name.toLowerCase().endsWith('.xml');
 
-/** `files`, each zip archive in it replaced by the XML files it holds. */
-export async function unzipped(files: File[]): Promise<Unzipped> {
-  const out: Unzipped = { files: [], failed: [] };
-  for (const file of files) {
+/** `files`, each zip archive in it replaced by the XML files it holds; `paths`, each file's path. */
+export async function unzipped(files: File[], paths: string[] = []): Promise<Unzipped> {
+  const out: Unzipped = { files: [], paths: [], failed: [] };
+  for (const [i, file] of files.entries()) {
+    const path = paths[i] || file.name;
     if (!isZip(file.name)) {
       out.files.push(file);
+      out.paths.push(path);
       continue;
     }
     try {
-      out.files.push(...(await xmlInZip(file)));
+      for (const found of await xmlInZip(file, path)) {
+        out.files.push(found.file);
+        out.paths.push(found.path);
+      }
     } catch (error) {
       out.failed.push({ name: file.name, reason: `the archive could not be read (${error instanceof Error ? error.message : error})` });
     }
@@ -30,12 +37,13 @@ export async function unzipped(files: File[]): Promise<Unzipped> {
   return out;
 }
 
-/** The XML files of an archive, those of the archives in it too. */
-async function xmlInZip(zip: Blob): Promise<File[]> {
-  const found: File[] = [];
+/** The XML files of an archive, those of the archives in it too, with their paths under `at`. */
+async function xmlInZip(zip: Blob, at: string): Promise<{ file: File; path: string }[]> {
+  const found: { file: File; path: string }[] = [];
   for (const entry of await entries(zip)) {
-    if (isXml(entry.path)) found.push(new File([await entry.read()], basename(entry.path), { type: 'application/xml' }));
-    else if (isZip(entry.path)) found.push(...(await xmlInZip(new Blob([await entry.read()]))));
+    const path = `${at}/${entry.path}`;
+    if (isXml(entry.path)) found.push({ file: new File([await entry.read()], basename(entry.path), { type: 'application/xml' }), path });
+    else if (isZip(entry.path)) found.push(...(await xmlInZip(new Blob([await entry.read()]), path)));
   }
   return found;
 }

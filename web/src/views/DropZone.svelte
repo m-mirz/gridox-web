@@ -1,7 +1,8 @@
 <script lang="ts">
   import { open, supported } from '../folder.svelte';
 
-  let { busy, compact, onfiles }: { busy: boolean; compact: boolean; onfiles: (files: File[]) => void } = $props();
+  /** `paths`: each file's path in the folder it came from, where it came from one. */
+  let { busy, compact, onfiles }: { busy: boolean; compact: boolean; onfiles: (files: File[], paths?: string[]) => void } = $props();
   function chosen(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const files = [...(input.files ?? [])];
@@ -15,7 +16,7 @@
     const path = (f: File) => f.webkitRelativePath || f.name;
     const files = [...(input.files ?? [])].filter((f) => /\.(xml|zip)$/i.test(f.name)).sort((a, b) => (path(a) < path(b) ? -1 : 1));
     input.value = '';
-    if (files.length) onfiles(files);
+    if (files.length) onfiles(files, files.map(path));
     else empty = 'There are no XML files or zip archives in that folder.';
   }
   let empty = $state<string | null>(null);
@@ -24,9 +25,9 @@
   async function openInPlace() {
     empty = null;
     try {
-      const files = await open();
-      if (files === null) return;
-      if (files.length) onfiles(files);
+      const opened = await open();
+      if (opened === null) return;
+      if (opened.files.length) onfiles(opened.files, opened.paths);
       else empty = 'There are no XML files or zip archives in that folder.';
     } catch (error) {
       empty = `That folder could not be read: ${error}`;

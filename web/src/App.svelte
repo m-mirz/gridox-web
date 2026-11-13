@@ -25,6 +25,8 @@
   let elapsed = $state<number | null>(null);
 
   let kept = $state(false);
+  /** Each file's path in the folder or archive it came from, by name. */
+  let paths = $state.raw<Record<string, string>>({});
   /** Files are being dragged over the page. */
   let dragging = $state(false);
   /** What a drop came to, when that was nothing. */
@@ -58,13 +60,14 @@
     // The browser's own word on what this holds; the drop is gone once anything waits.
     const heldFiles = event.dataTransfer.types.includes('Files');
     let files: File[];
+    let paths: string[];
     try {
-      files = await droppedFiles(event.dataTransfer);
+      ({ files, paths } = await droppedFiles(event.dataTransfer));
     } catch (failure) {
       notice = `That folder could not be read: ${failure}`;
       return;
     }
-    if (files.length) await run({ kind: 'load', files });
+    if (files.length) await run({ kind: 'load', files, paths });
     else if (heldFiles) notice = 'There are no XML files in that folder.';
     // Firefox's snap on Ubuntu 26.04 hands over an empty drop from the Files app, types and all.
     else notice = 'No files came through in that drop: the browser did not pass them on. Choose them with the button above instead.';
@@ -103,7 +106,11 @@
     void enqueue(validate);
   }
 
-  type ModelRequest = { kind: 'load'; files: File[] } | { kind: 'restore' } | { kind: 'clear' };
+  type ModelRequest =
+    | { kind: 'load'; files: File[]; paths?: string[] }
+    | { kind: 'include'; excluded: string[] }
+    | { kind: 'restore' }
+    | { kind: 'clear' };
 
   /** One at a time, in the order asked: a drop while kept files come back waits for them. */
   let queue: Promise<void> = Promise.resolve();
@@ -139,7 +146,7 @@
     notice = null;
     const started = performance.now();
     try {
-      ({ summary, kept } = await client.request<typeof request.kind>(request as never));
+      ({ summary, kept, paths } = await client.request<typeof request.kind>(request as never));
       version += 1;
       findings = null;
       elapsed = performance.now() - started;
@@ -315,15 +322,17 @@
         {client}
         {version}
         {summary}
+        {paths}
         {busy}
         {kept}
         {elapsed}
         {findings}
         {checking}
         bind:collapsed
-        onfiles={(files) => run({ kind: 'load', files })}
+        onfiles={(files, paths) => run({ kind: 'load', files, paths })}
         onclear={() => run({ kind: 'clear' })}
         onundo={undo}
+        onexclude={(excluded) => run({ kind: 'include', excluded })}
       />
       <main>
         {#if objects}
@@ -360,7 +369,7 @@
     <div class="welcome">
       <h2>Open a model</h2>
       <p class="sub">CGMES and Network Code files, a zip of them or their folder: read on this machine, never uploaded.</p>
-      <DropZone {busy} compact={false} onfiles={(files) => run({ kind: 'load', files })} />
+      <DropZone {busy} compact={false} onfiles={(files, paths) => run({ kind: 'load', files, paths })} />
     </div>
   {/if}
 </div>
