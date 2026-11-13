@@ -193,6 +193,39 @@ impl JsSession {
     }
 
     /// An object added; `random` gives its identifier, 16 bytes a draw.
+    /// What the use cases' guided edits offer for `id`.
+    #[wasm_bindgen(js_name = editGuided)]
+    pub fn edit_guided(&self, id: &str) -> String {
+        self.0.edit_guided(id).to_string()
+    }
+
+    /// CO_UC1: `equipment` added to `contingency`.
+    #[wasm_bindgen(js_name = editContingencyAdd)]
+    pub fn edit_contingency_add(
+        &mut self,
+        contingency: &str,
+        equipment: &str,
+        random: &[u8],
+    ) -> String {
+        self.0
+            .edit_contingency_add(contingency, equipment, random)
+            .to_string()
+    }
+
+    /// RA_UC3, AE_UC3: `schedule` enabled, or not, from `at`.
+    #[wasm_bindgen(js_name = editEnabling)]
+    pub fn edit_enabling(
+        &mut self,
+        schedule: &str,
+        at: &str,
+        enabled: bool,
+        random: &[u8],
+    ) -> String {
+        self.0
+            .edit_enabling(schedule, at, enabled, random)
+            .to_string()
+    }
+
     #[wasm_bindgen(js_name = editAdd)]
     pub fn edit_add(
         &mut self,

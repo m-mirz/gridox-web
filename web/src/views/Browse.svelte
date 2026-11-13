@@ -56,6 +56,8 @@
   }
 
   function selectedOnGrid(selection: { id: string | null; info: Info } | null) {
+    // Following an object picked elsewhere, the grid shows where it is: a schedule its breaker. The object stays.
+    if (following && selection?.id !== id) return;
     info = selection?.info ?? null;
     if (selection?.id === id) return;
     if (!following && selection?.id) remember(selection.id);
