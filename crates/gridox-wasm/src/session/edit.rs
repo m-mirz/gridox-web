@@ -844,9 +844,7 @@ impl Session {
                 .is_some()
         });
         self.build_texts();
-        let mut draws = random
-            .chunks_exact(16)
-            .map(|c| <[u8; 16]>::try_from(c).expect("16"));
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
         let mut exhausted = false;
         let mut next = || {
             draws.next().unwrap_or_else(|| {
@@ -961,9 +959,7 @@ impl Session {
         let Some(into) = self.defining_file(schedule) else {
             return Self::error(format!("no file defines `{schedule}`"));
         };
-        let mut draws = random
-            .chunks_exact(16)
-            .map(|c| <[u8; 16]>::try_from(c).expect("16"));
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
         let mut exhausted = false;
         let mut next = || {
             draws.next().unwrap_or_else(|| {
