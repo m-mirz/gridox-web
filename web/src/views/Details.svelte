@@ -135,7 +135,7 @@
     <ul class="findings" data-testid="object-findings">
       {#each object.findings as finding, i (i)}
         <li>
-          <span class={finding.severity}>{finding.name || finding.rule}</span>
+          <span class="rule"><span class="badge {finding.severity}">{finding.severity}</span> <span class="mono">{finding.name || finding.rule}</span></span>
           {#if finding.property}<span class="sub">{short(finding.property)}</span>{/if}
           <span>{finding.message}</span>
         </li>
@@ -218,7 +218,7 @@
 
   aside {
     overflow: auto;
-    padding: 0.5rem 0.75rem;
+    padding: 0.75rem 1rem 1rem;
     min-width: 0;
   }
 
@@ -228,8 +228,12 @@
   }
 
   h3 {
-    margin: 1rem 0 0.25rem;
-    font-size: 0.95rem;
+    margin: 1.25rem 0 0.4rem;
+    color: var(--text-3);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   p {
@@ -289,8 +293,24 @@
   .findings li {
     display: flex;
     flex-direction: column;
-    margin-bottom: 0.4rem;
+    gap: 0.15rem;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
     overflow-wrap: anywhere;
+  }
+
+  .rule {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .rule .mono {
+    color: var(--text-2);
+    font-size: 0.8rem;
   }
 
   [data-testid='referrers'] li {
@@ -303,26 +323,16 @@
     font-size: 0.9rem;
   }
 
-  .violation {
-    color: var(--violation);
-  }
-
-  .warning {
-    color: var(--warning);
-  }
-
-  .info {
-    color: var(--info);
-  }
-
   dl {
     margin: 0;
     font-size: 0.9rem;
   }
 
   dt {
-    margin-top: 0.4rem;
-    color: var(--muted);
+    margin-top: 0.5rem;
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 0.78rem;
     overflow-wrap: anywhere;
   }
 

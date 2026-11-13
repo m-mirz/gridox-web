@@ -80,7 +80,7 @@
   }
 
   /** The inspector closed: nothing selected, the grid whole again. */
-  function close() {
+  export function close() {
     id = null;
     info = null;
     gridView?.unselect();

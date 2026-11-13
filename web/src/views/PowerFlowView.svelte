@@ -148,14 +148,14 @@
 <section aria-label="Power flow" data-testid="power-flow">
   <div>
     <h2>Power flow</h2>
-    <div class="bar">
+    <div class="bar options">
       <label>
         Imbalance taken by
         <select bind:value={sharing} disabled={solving}>
           {#each Object.entries(SHARING) as [value, text]}<option {value}>{text}</option>{/each}
         </select>
       </label>
-      <label><input type="checkbox" bind:checked={qLimits} disabled={solving} /> Hold reactive limits</label>
+      <label class="check"><input type="checkbox" bind:checked={qLimits} disabled={solving} /> Hold reactive limits</label>
       <label>
         Buses from
         <select bind:value={switches} disabled={solving || !!action}>
@@ -181,7 +181,7 @@
           </label>
         {/if}
       {/if}
-      <button type="button" onclick={solve} disabled={solving}>{solving ? 'Solving…' : flow ? 'Solve again' : 'Solve'}</button>
+      <button type="button" class="primary" onclick={solve} disabled={solving}>{solving ? 'Solving…' : flow ? 'Solve again' : 'Solve'}</button>
       {#if flow && elapsed !== null && !solving}<span class="sub">{Math.round(elapsed).toLocaleString('en')} ms, by gridoxide, in this browser</span>{/if}
     </div>
 

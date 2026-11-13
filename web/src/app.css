@@ -278,3 +278,83 @@ code,
 .sub {
   color: var(--text-3);
 }
+
+/* A calculation's options: a card of fields, each label above its control, the action last. */
+div.bar.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+}
+
+div.bar.options > label:not(.check) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--text-2);
+  font-size: 0.8rem;
+}
+
+div.bar.options > label:not(.check) select {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+div.bar.options > label.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+}
+
+/* What a calculation came to, in a line. */
+.verdict {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Tabs within a view: a segmented control. */
+[role='tab'] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+[role='tab'][aria-selected='true'] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Tables in a view: a card. */
+.view.page table {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.view.page tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.view.page tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+@media (max-width: 48rem) {
+  /* On a phone, a wide table scrolls within its card, not the page. */
+  .view.page table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
