@@ -352,6 +352,54 @@ export interface SarResult {
   analysed: boolean;
 }
 
+/** What an edit did: the files it changed, or why it did nothing. */
+export interface EditResult {
+  error: string | null;
+  changed: string[];
+  /** Files an undo removed, as the edit undone had created them. */
+  removed?: string[];
+  revision?: number;
+  /** An object added: its mRID. */
+  id?: string;
+}
+
+export interface EditState {
+  /** The files changed since they were loaded. */
+  edited: string[];
+  /** Edits that can be undone. */
+  undo: number;
+  revision: number;
+}
+
+/** How each field of an object's class is edited. */
+export interface EditForm {
+  id: string;
+  class: string;
+  fields: {
+    key: string;
+    kind: 'literal' | 'reference' | 'enumeration';
+    range: string;
+    xsd: string;
+    values: string[];
+    written: boolean;
+    comment: string;
+  }[];
+  revision: number;
+}
+
+export interface Candidate {
+  id: string;
+  label: string;
+  class: string;
+  place: string;
+}
+
+/** Fixes for an object, each its edits by file, for the revision they were made for. */
+export interface Fixes {
+  revision: number;
+  fixes: { title: string; edits: unknown }[];
+}
+
 /** The datasets loaded, as validation read them one by one. */
 export interface Datasets {
   files: {
@@ -391,6 +439,23 @@ export type Request =
   | { kind: 'analysisPart'; from: number; to: number }
   | { kind: 'analysisAbsorb'; part: unknown }
   | { kind: 'files' }
+  | { kind: 'summary' }
+  | { kind: 'editState' }
+  | { kind: 'fileText'; name: string }
+  | { kind: 'editUndo' }
+  | { kind: 'editRename'; old: string; new: string }
+  | { kind: 'editDeletePreview'; id: string; contained: boolean }
+  | { kind: 'editDelete'; id: string; contained: boolean }
+  | { kind: 'editAddable'; parent: string }
+  | { kind: 'editAdd'; parent: string; class: string; name: string | null }
+  | { kind: 'editSet'; id: string; key: string; value: string }
+  | { kind: 'editRemove'; id: string; key: string }
+  | { kind: 'editForm'; id: string }
+  | { kind: 'editCandidates'; id: string; key: string }
+  | { kind: 'editFixes'; id: string }
+  | { kind: 'editApply'; revision: number; edits: unknown }
+  | { kind: 'editCounterProposal'; refused: string; responding: string | null }
+  | { kind: 'editResponders' }
   | { kind: 'loadOnly'; files: File[] }
   | { kind: 'analysisResult' }
   | { kind: 'analysisViolations'; contingency: string | null; terminal: string | null }
@@ -426,6 +491,23 @@ export interface Answers {
   /** The files the model was loaded from, for another worker to load. */
   files: File[];
   loadOnly: Loaded;
+  summary: Loaded;
+  editState: EditState;
+  fileText: string | null;
+  editUndo: EditResult;
+  editRename: EditResult;
+  editDeletePreview: { objects: number; references: number; files: string[]; contained: number };
+  editDelete: EditResult;
+  editAddable: { class: string; key: string; comment: string }[];
+  editAdd: EditResult;
+  editSet: EditResult;
+  editRemove: EditResult;
+  editForm: EditForm | null;
+  editCandidates: Candidate[];
+  editFixes: Fixes;
+  editApply: EditResult;
+  editCounterProposal: EditResult;
+  editResponders: Linked[];
   analysisResult: Analysis | null;
   analysisViolations: AnalysisViolation[];
   sarDefaults: Partial<SarHeader> | null;
