@@ -161,6 +161,17 @@ export interface AssessedElement {
   grid: Reveal[];
 }
 
+/** One property an alteration changes: its value from a range or an intensity schedule at the scenario time. */
+export interface ActionChange {
+  alteration: Linked;
+  target: Linked;
+  property: string;
+  before: string | null;
+  after: string | null;
+  source: 'range' | 'schedule';
+  note: string | null;
+}
+
 /** What applying a remedial action does to a switch: `open` as the model has it, `openAfter` as applied. */
 export interface SwitchState extends Linked {
   open: string | null;
@@ -184,6 +195,8 @@ export interface RemedialAction {
   }[];
   dependencies: { id: string; kind: string | null; group: Linked | null; with: Linked[] }[];
   applied: SwitchState[];
+  /** What applying it changes, alteration by alteration; `after` null where it cannot say, and `note` why. */
+  changes: ActionChange[];
   grid: Reveal[];
 }
 
@@ -232,7 +245,8 @@ export type ComponentStatus = 'converged' | 'maxIterations' | 'singular' | 'noRe
 
 /** A power flow of the model, by gridoxide, as its security analysis solves a base case. */
 export interface PowerFlow {
-  options: { sharing: Sharing; qLimits: boolean };
+  /** `switches`: the buses from the switches as the SSH sets them, not from the TP. */
+  options: { sharing: Sharing; qLimits: boolean; switches: boolean };
   /** Why nothing was solved, such as a model without a topology. */
   error: string | null;
   components: {
@@ -266,6 +280,19 @@ export interface PowerFlow {
   pastLimits: (Linked & { mw: number; limit: number })[];
   violations: { terminal: string; equipment: Linked | null; limit: Linked; kind: string; amps: number; limitAmps: number; percent: number }[];
   overlay: FlowOverlay;
+  /** A remedial action applied: the action, the switch states it set, and what that changed. */
+  action?: Linked;
+  actionSwitches?: (Linked & { open: string | null; openAfter: boolean })[];
+  actionChanges?: ActionChange[];
+  compared?: {
+    violationsBefore: number;
+    violationsAfter: number;
+    solvedBefore: number;
+    solvedAfter: number;
+    largestChange: number | null;
+    changed: number;
+    most: (Linked & { change: number })[];
+  };
 }
 
 /** A power flow, by what the grid draws. */
@@ -298,7 +325,7 @@ export interface AnalysisViolation {
 
 /** A security analysis, by contingency and by element. Percentages are of the limit. */
 export interface Analysis {
-  options: { sharing: Sharing; qLimits: boolean };
+  options: { sharing: Sharing; qLimits: boolean; switches: boolean };
   scenarioTime: string;
   total: number;
   solved: number;
@@ -432,8 +459,8 @@ export type Request =
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
   | { kind: 'schedules' }
-  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean }
-  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean }
+  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean; switches: boolean; action: string | null }
+  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean; switches: boolean }
   | { kind: 'analysisStep'; count: number }
   | { kind: 'analysisRange'; from: number; to: number }
   | { kind: 'analysisPart'; from: number; to: number }

@@ -252,6 +252,11 @@ impl Session {
         let security = SecurityOptions {
             sharing: analysis.options.sharing,
             enforce_q_limits: analysis.options.q_limits,
+            topology: if analysis.options.switches {
+                gridoxide::cgmes::CgmesTopologyMode::NodeBreakerFromEq
+            } else {
+                gridoxide::cgmes::CgmesTopologyMode::BusBranchFromTp
+            },
             ..Default::default()
         };
         run(&mut self.dataset, &batch, &security).inspect_err(|_| self.analysis = None)
@@ -451,7 +456,7 @@ impl Session {
             .filter(|v| v.contingency.is_none())
             .count();
         let summary = json!({
-            "options": { "sharing": analysis.options.sharing.name(), "qLimits": analysis.options.q_limits },
+            "options": { "sharing": analysis.options.sharing.name(), "qLimits": analysis.options.q_limits, "switches": analysis.options.switches },
             "scenarioTime": done.scenario_time,
             "total": analysis.contingencies.len(),
             "solved": done.solved,
