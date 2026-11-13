@@ -152,6 +152,8 @@ async function handle(request: Request): Promise<string> {
       return session.findingsOf(request.rule);
     case 'datasets':
       return session.datasets();
+    case 'boundaryPoints':
+      return session.boundaryPoints();
     case 'contingencies':
       return session.contingencies();
     case 'assessedElements':

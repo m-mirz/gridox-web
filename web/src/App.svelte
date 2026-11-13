@@ -6,6 +6,7 @@
   import type { Reveal } from './grid/model';
   import Browse from './views/Browse.svelte';
   import DatasetsView from './views/DatasetsView.svelte';
+  import BoundaryView from './views/BoundaryView.svelte';
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
   import NetworkCodesView from './views/NetworkCodesView.svelte';
@@ -424,6 +425,7 @@
           </div>
           <div class="view page" hidden={view !== 'data'}>
             <DatasetsView {client} {findingsVersion} onnavigate={navigate} />
+            <BoundaryView {client} {findingsVersion} onnavigate={navigate} />
             <SummaryView {summary} part="classes" />
           </div>
         {:else}

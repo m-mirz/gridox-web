@@ -168,6 +168,12 @@ impl JsSession {
         self.0.set_excluded(&excluded);
     }
 
+    /// Each boundary point, and how the IGMs meet at it; see [`Session::boundary_points`].
+    #[wasm_bindgen(js_name = boundaryPoints)]
+    pub fn boundary_points(&self) -> String {
+        self.0.boundary_points().to_string()
+    }
+
     #[wasm_bindgen(js_name = fileText)]
     pub fn file_text(&self, name: &str) -> Option<String> {
         self.0.file_text(name).map(str::to_string)

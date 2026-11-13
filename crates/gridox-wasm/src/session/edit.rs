@@ -460,6 +460,7 @@ impl Session {
             objects: ids.len() + 2,
             kind,
             maker,
+            equipment: false,
         });
         self.texts.history.push(vec![(name.clone(), None)]);
         self.reload();
