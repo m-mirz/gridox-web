@@ -90,6 +90,32 @@ test('the whole instance loaded once, one IGM chosen from it', async ({ page }) 
   await expect(page.getByTestId('pf-components')).toContainText(PF.Svedala.sv);
 });
 
+// The example button, its files served from the checkout rather than GitHub: all of the instance,
+// and Svedala's model chosen from it.
+test.describe('the example', () => {
+  // Without the service worker, so every request meets the stand-in below.
+  test.use({ serviceWorkers: 'block' });
+
+test('the example loads the whole instance, one IGM chosen from it', async ({ page }) => {
+  let asked = 0;
+  await page.route('https://raw.githubusercontent.com/**', async (route) => {
+    asked += 1;
+    const path = decodeURIComponent(new URL(route.request().url()).pathname.split('/Instance/')[1]);
+    await route.fulfill({ status: 200, path: join(ROOT, path), headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.getByRole('button', { name: 'Load an example: ReliCapGrid' }).click();
+  const tree = page.getByTestId('file-tree');
+  await expect(tree.getByTestId('included')).toHaveText('160 of 160 in the model', { timeout: 200_000 });
+  expect(asked).toBe(160);
+  await tree.getByRole('button', { name: 'None' }).click();
+  await expect(tree.getByTestId('included')).toContainText(/^0 of /, { timeout: 200_000 });
+  for (const folder of ['Svedala', 'commonData']) await tree.getByLabel(`Folder ${folder} in the model`).check();
+  await expect(page.getByTestId('totals')).toContainText(`from ${area('Svedala').length} files`, { timeout: 200_000 });
+  await solve(page);
+  await expect(page.getByTestId('pf-verdict')).toHaveText(PF.Svedala.verdict);
+});
+});
+
 // The same by the headers: the files Svedala made and the common data's, from the presets.
 test('one maker and the common data chosen by their presets', async ({ page }) => {
   await page.getByLabel('Choose a folder').setInputFiles(ROOT);

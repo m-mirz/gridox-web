@@ -29,6 +29,12 @@ harness and gridoxide's tests record, the data's problems included. It takes Rel
 `../cimoxide/relicapgrid` (fetch it with `git submodule update --init --checkout relicapgrid` there), and skips without it. SAR_UC1
 validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/target/release/cimcli`.
 
+## The example
+
+"Load an example" fetches ReliCapGrid, ENTSO-E's test configuration (CC BY-SA 4.0), from its
+repository at a fixed commit (`web/src/example.ts`, its file list in `example-files.json`): the
+only request the page makes to another site, and only when asked. The site ships none of it.
+
 ## Keys
 
 1 to 6 go to the views (Explore, Validation, Network codes, Power flow, Contingencies, Data
