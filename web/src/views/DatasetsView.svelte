@@ -44,7 +44,8 @@
         <h2>Datasets</h2>
         <span data-testid="datasets-summary">
           {count(datasets.files.length, 'file')} · {count(datasets.twice.count, 'object')} defined more than once ·
-          {count(datasets.conflicts.count, 'object')} typed with unrelated classes · {count(unresolved(datasets), 'header reference')} not loaded
+          {count(datasets.conflicts.count, 'object')} typed with unrelated classes · {count(unresolved(datasets), 'header reference')} not loaded ·
+          {count(datasets.unresolved, 'reference')} to objects not loaded
         </span>
       </summary>
 
@@ -83,8 +84,20 @@
                 <span class="sub">
                   {count(file.objects, 'object')}{file.foreign ? `, ${file.foreign.toLocaleString('en')} of reference data` : ''}
                   {#if file.header}· {file.header.profiles.map(profile).join(', ')}{:else}· no header{/if}
+                  {#if file.unresolved.count}· <span class="warn">{count(file.unresolved.count, 'reference')} to objects not loaded</span>{/if}
                 </span>
               </summary>
+              {#if file.unresolved.count}
+                <ul class="unresolved" data-testid="unresolved">
+                  {#each file.unresolved.references as r, i (i)}
+                    <li>
+                      <button type="button" class="link" onclick={() => onnavigate(r.id)}>{r.label ?? r.id}</button>
+                      <span class="sub">{r.class ?? ''} {r.key} →</span> <span class="missing">{r.target}</span>
+                    </li>
+                  {/each}
+                  {#if file.unresolved.references.length < file.unresolved.count}<li class="sub">The first {file.unresolved.references.length}.</li>{/if}
+                </ul>
+              {/if}
               {#if file.header}
                 <button type="button" class="link" onclick={() => onnavigate(file.header!.id)}>{file.header.class} {file.header.id}</button>
                 <dl>
@@ -154,6 +167,16 @@
 
   .sub {
     color: var(--muted);
+  }
+
+  .warn {
+    color: var(--warn);
+  }
+
+  .unresolved {
+    margin: 0.25rem 0 0.5rem;
+    padding-left: 1.25rem;
+    overflow-wrap: anywhere;
   }
 
   .missing {

@@ -172,7 +172,7 @@
   {#if guided?.kind === 'contingency'}
     <h4>Equipment lost (CO_UC1)</h4>
     <ul class="sub" data-testid="guided-elements">
-      {#each guided.elements as e (e.element.id)}<li>{e.equipment.label ?? e.equipment.id} <small>({e.equipment.class ?? 'not in the model'})</small></li>{/each}
+      {#each guided.elements as e (e.element.id)}<li data-id={e.equipment.id}>{e.equipment.label ?? e.equipment.id} <small>({e.equipment.class ?? 'not in the model'})</small></li>{/each}
     </ul>
     <div class="row">
       <input aria-label="Equipment to add" list="c-lost" placeholder="Equipment mRID" bind:value={lost} />

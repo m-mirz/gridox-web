@@ -24,6 +24,11 @@ cargo test         # the Rust side, from the root
 
 `RELICAPGRID_DIR=<a ReliCapGrid checkout> npm run e2e` also decodes its common grid model, and prints how long it took.
 
+`tests/relicapgrid.spec.ts` walks through each use case of the report on ReliCapGrid, in Chromium, and expects what cimoxide's
+harness and gridoxide's tests record, the data's problems included. It takes ReliCapGrid from `RELICAPGRID_DIR`, else from
+`../cimoxide/relicapgrid` (fetch it with `git submodule update --init --checkout relicapgrid` there), and skips without it. SAR_UC1
+validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/target/release/cimcli`.
+
 ## How it fits together
 
 `crates/gridox-wasm` is the libraries' API as the worker needs it, JSON in and out. `web/src/worker` holds the model in a Web Worker, so the
