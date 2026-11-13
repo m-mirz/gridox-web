@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { open, supported } from '../folder.svelte';
+
   let { busy, compact, onfiles }: { busy: boolean; compact: boolean; onfiles: (files: File[]) => void } = $props();
   function chosen(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -17,6 +19,19 @@
     else empty = 'There are no XML files or zip archives in that folder.';
   }
   let empty = $state<string | null>(null);
+
+  /** A folder whose files edits are saved back into. */
+  async function openInPlace() {
+    empty = null;
+    try {
+      const files = await open();
+      if (files === null) return;
+      if (files.length) onfiles(files);
+      else empty = 'There are no XML files or zip archives in that folder.';
+    } catch (error) {
+      empty = `That folder could not be read: ${error}`;
+    }
+  }
 </script>
 
 <label
@@ -38,9 +53,20 @@
   <input type="file" webkitdirectory multiple aria-label="Choose a folder" disabled={busy} onchange={folder} onclick={() => (empty = null)} />
   <span>Or a folder: its XML files and zip archives, in its subfolders too.</span>
 </label>
+{#if supported}
+  <button type="button" class="in-place" disabled={busy} onclick={openInPlace}>Open a folder to save edits in place</button>
+{/if}
 {#if empty}<p role="status" data-testid="folder-empty">{empty}</p>{/if}
 
 <style>
+  .in-place {
+    margin-top: 0.5rem;
+    min-height: 2rem;
+    max-width: 100%;
+    padding: 0 0.75rem;
+    font: inherit;
+  }
+
   label {
     display: flex;
     flex-direction: column;
