@@ -177,6 +177,12 @@ async function handle(request: Request): Promise<string> {
       return edited(session.editApply(request.revision, JSON.stringify(request.edits)));
     case 'editCounterProposal':
       return edited(session.editCounterProposal(request.refused, request.responding ?? undefined, crypto.getRandomValues(new Uint8Array(160))));
+    case 'editGuided':
+      return session.editGuided(request.id);
+    case 'editContingencyAdd':
+      return edited(session.editContingencyAdd(request.contingency, request.equipment, crypto.getRandomValues(new Uint8Array(160))));
+    case 'editEnabling':
+      return edited(session.editEnabling(request.schedule, request.at, request.enabled, crypto.getRandomValues(new Uint8Array(160))));
     case 'editResponders':
       return session.editResponders();
     case 'loadOnly': {
