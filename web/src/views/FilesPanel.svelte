@@ -4,6 +4,7 @@
   import type { FindingsSummary, Summary } from '../worker/protocol';
   import DropZone from './DropZone.svelte';
   import EditedFiles from './EditedFiles.svelte';
+  import FileTree from './FileTree.svelte';
   import FolderBar from './FolderBar.svelte';
   import SummaryView from './SummaryView.svelte';
 
@@ -15,6 +16,7 @@
     client,
     version,
     summary,
+    paths,
     busy,
     kept,
     elapsed,
@@ -24,19 +26,24 @@
     onfiles,
     onclear,
     onundo,
+    onexclude,
   }: {
     client: WorkerClient;
     version: number;
     summary: Summary;
+    /** Each file's path in the folder or archive it came from, by name. */
+    paths: Record<string, string>;
     busy: boolean;
     kept: boolean;
     elapsed: number | null;
     findings: FindingsSummary | null;
     checking: boolean;
     collapsed?: boolean;
-    onfiles: (files: File[]) => void;
+    onfiles: (files: File[], paths?: string[]) => void;
     onclear: () => void;
     onundo: () => void;
+    /** The model to be made of all files but these. */
+    onexclude: (excluded: string[]) => void;
   } = $props();
 
   let names = $derived(summary.files.filter((f) => f.status === 'loaded').map((f) => f.name));
@@ -47,7 +54,7 @@
     <button type="button" class="ghost icon" aria-label="Show the files" aria-expanded="false" onclick={() => (collapsed = false)}>
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 4h5l2 2h7v9H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
     </button>
-    <span class="sub" title="Files loaded">{names.length}</span>
+    <span class="sub" title="Files in the model">{names.length - summary.excluded.length}</span>
   </nav>
 {:else}
   <aside class="files" aria-label="Files" data-testid="files-panel">
@@ -61,6 +68,7 @@
     <FolderBar {client} {version} {names} ready={!checking && findings !== null} />
     <EditedFiles {client} {version} {findings} {checking} folderOpen={folder.connected} {onundo} />
     <SummaryView {summary} part="files" />
+    <FileTree {summary} {paths} {busy} {onexclude} />
     <div class="actions">
       <button type="button" disabled={busy} onclick={onclear}>Clear</button>
       {#if elapsed !== null}<span class="sub" data-testid="elapsed">{Math.round(elapsed).toLocaleString('en')} ms</span>{/if}

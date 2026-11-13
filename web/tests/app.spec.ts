@@ -854,6 +854,42 @@ test.describe('choosing many files at once', () => {
     await expect(page.getByTestId('totals')).toContainText('from 3 files');
   });
 
+  test('the files stay loaded in their folders, and each is ticked into the model or not', async ({ page }) => {
+    const dir = scratch();
+    for (const sub of ['grid', 'nc']) mkdirSync(join(dir, 'model', sub), { recursive: true });
+    for (const f of [GRID, STATE, SV]) cpSync(f, join(dir, 'model', 'grid', f.split('/').pop()!));
+    cpSync(NC, join(dir, 'model', 'nc', 'nc_CO_AE.xml'));
+    writeFileSync(join(dir, 'model', 'nc', 'sv.zip'), zip([{ path: 'inner/extra_SV.xml', data: readFileSync(SV) }]));
+    await folderInput(page).setInputFiles(dir);
+    await expect(page.getByTestId('totals')).toContainText('from 5 files');
+    const tree = page.getByTestId('file-tree');
+    await expect(tree.getByTestId('included')).toHaveText('5 of 5 in the model');
+    // The folders as they are, the zip's file under the archive.
+    await expect(tree.getByLabel('Folder grid in the model')).toBeChecked();
+    await expect(tree.getByRole('button', { name: 'Close nc' })).toBeVisible();
+    await expect(tree.getByLabel('Folder sv.zip in the model')).toBeVisible();
+    // The network codes out: the model without them, nothing read again.
+    await tree.getByLabel('Folder nc in the model').uncheck();
+    await expect(tree.getByTestId('included')).toHaveText('3 of 5 in the model');
+    await expect(page.getByTestId('totals')).toContainText('from 3 files');
+    await expect(await at(page, 'no-network-codes')).toBeVisible();
+    // One back: the folder only partly in.
+    await tree.getByLabel('nc_CO_AE.xml in the model').check();
+    await expect(tree.getByTestId('included')).toHaveText('4 of 5 in the model');
+    expect(await tree.getByLabel('Folder nc in the model').evaluate((box) => (box as HTMLInputElement).indeterminate)).toBe(true);
+    await expect(await at(page, 'network-codes')).toBeVisible();
+    // Kept so after a reload, when the browser keeps the files.
+    if (await page.getByTestId('kept').isVisible()) {
+      await page.reload();
+      await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('4 of 5 in the model');
+      await expect(page.getByTestId('totals')).toContainText('from 4 files');
+    }
+    await page.getByTestId('file-tree').getByRole('button', { name: 'None' }).click();
+    await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('0 of 5 in the model');
+    await page.getByTestId('file-tree').getByRole('button', { name: 'All' }).click();
+    await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('5 of 5 in the model');
+  });
+
   test('a folder with nothing to read is said so', async ({ page }) => {
     const dir = scratch();
     writeFileSync(join(dir, 'notes.txt'), 'not a model');
