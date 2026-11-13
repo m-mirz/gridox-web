@@ -12,8 +12,9 @@ use cimmodel::CimDataset;
 use cimmodel::base::FieldValue;
 use cimview::mrid_of;
 use gridoxide::security_analysis::{
-    Contingency, CurrentLimit, ImbalanceSharing, LimitKind, PastLimit, SarHeader, SecurityAnalysis,
-    SecurityOptions, TerminalFlow, Violation, read_contingencies, run,
+    Change, Contingency, Curative, CurrentLimit, ImbalanceSharing, LimitKind, PastLimit, SarHeader,
+    SecurityAnalysis, SecurityOptions, TerminalFlow, Violation, read_contingencies,
+    run_with_curative,
 };
 use serde_json::{Value, json};
 
@@ -35,7 +36,14 @@ pub(super) struct Analysis {
     done: Option<SecurityAnalysis>,
     /// Parts from other workers that came before this one had a base case of its own.
     waiting: Vec<SecurityAnalysis>,
+    /// Each contingency's curative actions, as the changes they make.
+    curative: HashMap<String, Vec<Curative>>,
+    /// The curative actions that make no change, and why.
+    skipped: Vec<Skipped>,
 }
+
+/// A curative change not made: (contingency, action, why).
+type Skipped = (String, String, String);
 
 /// `more`, the analysis of other contingencies than those of `into`, merged in: the base case is
 /// the same in each, so it is kept once. What `run` sorts is sorted again, and the rest put in
@@ -47,13 +55,25 @@ fn merge(into: &mut SecurityAnalysis, more: SecurityAnalysis) {
             .filter(|v| v.contingency.is_some()),
     );
     into.violations.sort_by(|a, b| {
-        (a.contingency.as_deref(), &a.terminal, &a.limit.mrid).cmp(&(
-            b.contingency.as_deref(),
-            &b.terminal,
-            &b.limit.mrid,
-        ))
+        (
+            a.contingency.as_deref(),
+            &a.applied,
+            &a.terminal,
+            &a.limit.mrid,
+        )
+            .cmp(&(
+                b.contingency.as_deref(),
+                &b.applied,
+                &b.terminal,
+                &b.limit.mrid,
+            ))
     });
     into.solved += more.solved;
+    into.curative_solved += more.curative_solved;
+    into.curative_stalled.extend(more.curative_stalled);
+    into.curative_stalled.sort();
+    into.not_applied.extend(more.not_applied);
+    into.not_applied.sort();
     into.stalled.extend(more.stalled);
     into.stalled.sort();
     into.absent.extend(more.absent);
@@ -83,9 +103,12 @@ fn part_to_json(part: &SecurityAnalysis, count: usize) -> Value {
         "solved": part.solved,
         "stalled": part.stalled,
         "absent": part.absent,
+        "curativeSolved": part.curative_solved,
+        "curativeStalled": part.curative_stalled,
+        "notApplied": part.not_applied,
         "violations": part.violations.iter().filter(|v| v.contingency.is_some()).map(|v| json!([
             v.contingency, v.terminal, v.limit.mrid, v.limit.amps, kind(v.limit.kind),
-            v.flow.p_mw, v.flow.q_mvar, v.flow.amps,
+            v.flow.p_mw, v.flow.q_mvar, v.flow.amps, v.applied,
         ])).collect::<Vec<_>>(),
         "pastLimits": part.past_limits.iter().filter(|p| p.contingency.is_some()).map(|p| json!([
             p.contingency, p.machine, p.mw, p.limit,
@@ -104,6 +127,7 @@ fn part_from_json(part: &Value, sharing: ImbalanceSharing) -> Option<(SecurityAn
         .map(|v| {
             Some(Violation {
                 contingency: text(&v[0]),
+                applied: texts(&v[8])?,
                 terminal: text(&v[1])?,
                 limit: CurrentLimit {
                     mrid: text(&v[2])?,
@@ -138,6 +162,9 @@ fn part_from_json(part: &Value, sharing: ImbalanceSharing) -> Option<(SecurityAn
         solved: part["solved"].as_u64()? as usize,
         stalled: texts(&part["stalled"])?,
         absent: texts(&part["absent"])?,
+        curative_solved: part["curativeSolved"].as_u64()? as usize,
+        curative_stalled: texts(&part["curativeStalled"])?,
+        not_applied: texts(&part["notApplied"])?,
         past_limits,
         requires: Vec::new(),
     };
@@ -188,6 +215,77 @@ impl Session {
         found
     }
 
+    /// Each contingency's curative actions: the remedial actions its
+    /// `ContingencyWithRemedialAction`s include (not disabled), as the changes they make with
+    /// schedules read `at` a time; and those that make none, and why.
+    fn curative_actions(&self, at: Option<i64>) -> (HashMap<String, Vec<Curative>>, Vec<Skipped>) {
+        let mut by: HashMap<String, Vec<Curative>> = HashMap::new();
+        let mut skipped = Vec::new();
+        let mut links: Vec<&String> = self
+            .dataset
+            .by_type
+            .get("nc:ContingencyWithRemedialAction")
+            .into_iter()
+            .flatten()
+            .collect();
+        links.sort();
+        for link in links {
+            let Some(e) = self.dataset.entries.get(link) else {
+                continue;
+            };
+            let included = Self::text(e, "ContingencyWithRemedialAction.combinationConstraintKind")
+                .as_deref()
+                == Some("included");
+            let disabled =
+                e.get_str("ContingencyWithRemedialAction.normalEnabled") == Some("false");
+            let (Some(contingency), Some(action)) = (
+                e.get_ref("ContingencyWithRemedialAction.Contingency")
+                    .map(mrid_of),
+                e.get_ref("ContingencyWithRemedialAction.RemedialAction")
+                    .map(mrid_of),
+            ) else {
+                continue;
+            };
+            if !included || disabled {
+                continue;
+            }
+            let changes = self.action_changes(action, at);
+            let made: Vec<Change> = changes
+                .iter()
+                .filter_map(|c| {
+                    Some(Change {
+                        object: c.target.clone(),
+                        property: c.property.clone(),
+                        value: c.after.clone()?,
+                    })
+                })
+                .collect();
+            for c in changes.iter().filter(|c| c.after.is_none()) {
+                skipped.push((
+                    contingency.to_string(),
+                    action.to_string(),
+                    format!("{}: {}", c.property, c.note.clone().unwrap_or_default()),
+                ));
+            }
+            if changes.is_empty() {
+                skipped.push((
+                    contingency.to_string(),
+                    action.to_string(),
+                    "it has no alteration".into(),
+                ));
+            }
+            if !made.is_empty() {
+                by.entry(contingency.to_string())
+                    .or_default()
+                    .push(Curative {
+                        action: action.to_string(),
+                        changes: made,
+                    });
+            }
+        }
+        (by, skipped)
+    }
+
     /// Readies an analysis of every contingency loaded. Its `total`, or why there is none.
     pub fn analysis_start(&mut self, options: Options) -> Value {
         self.analysis = None;
@@ -215,6 +313,17 @@ impl Session {
             }
         }
         let total = contingencies.len();
+        let (curative, skipped) = if options.curative {
+            self.curative_actions(options.at)
+        } else {
+            Default::default()
+        };
+        let actions = curative.values().map(Vec::len).sum::<usize>();
+        // A switch an action sets is seen only from the switches.
+        let options = Options {
+            switches: options.switches || options.curative,
+            ..options
+        };
         self.analysis = Some(Analysis {
             options,
             contingencies,
@@ -224,8 +333,10 @@ impl Session {
             counted: 0,
             done: None,
             waiting: Vec::new(),
+            curative,
+            skipped,
         });
-        json!({ "error": null, "total": total })
+        json!({ "error": null, "total": total, "curative": actions })
     }
 
     /// The contingencies `from..to` analysed, on their own. An error ends the analysis.
@@ -259,7 +370,9 @@ impl Session {
             },
             ..Default::default()
         };
-        run(&mut self.dataset, &batch, &security).inspect_err(|_| self.analysis = None)
+        let curative = analysis.curative.clone();
+        run_with_curative(&mut self.dataset, &batch, &curative, &security)
+            .inspect_err(|_| self.analysis = None)
     }
 
     /// `part`, of `count` contingencies, merged in. One from another worker, `own` false, has no
@@ -357,6 +470,7 @@ impl Session {
     fn violation(&self, v: &Violation) -> Value {
         json!({
             "contingency": v.contingency.as_deref().map(|c| self.linked(c)),
+            "applied": v.applied.iter().map(|a| self.linked(a)).collect::<Vec<_>>(),
             "terminal": v.terminal,
             "equipment": self.equipment_of(&v.terminal).map(|(_, e)| e),
             "limit": self.linked(&v.limit.mrid), "kind": kind(v.limit.kind),
@@ -374,7 +488,16 @@ impl Session {
         let mut by_contingency: HashMap<&str, (usize, f64)> = HashMap::new();
         // By terminal: contingencies violating, the worst and where, the base case's worst.
         let mut by_terminal: BTreeMap<&str, AtTerminal> = BTreeMap::new();
-        for v in &done.violations {
+        // After curative actions: by contingency, the count, the worst and the actions.
+        let mut after: HashMap<&str, (usize, f64)> = HashMap::new();
+        for v in done.violations.iter().filter(|v| !v.applied.is_empty()) {
+            if let Some(c) = v.contingency.as_deref() {
+                let found = after.entry(c).or_insert((0, 0.0));
+                found.0 += 1;
+                found.1 = found.1.max(v.percent());
+            }
+        }
+        for v in done.violations.iter().filter(|v| v.applied.is_empty()) {
             let entry = by_terminal
                 .entry(&v.terminal)
                 .or_insert((0, 0.0, None, None));
@@ -416,6 +539,16 @@ impl Session {
                         .collect::<Vec<_>>()
                 );
                 cell["outcome"] = json!(outcome);
+                if let Some(actions) = analysis.curative.get(&c.mrid) {
+                    let stalled = done.curative_stalled.contains(&c.mrid);
+                    let (count, worst) = after.get(c.mrid.as_str()).copied().unwrap_or((0, 0.0));
+                    cell["after"] = json!({
+                        "actions": actions.iter().map(|a| self.linked(&a.action)).collect::<Vec<_>>(),
+                        "stalled": stalled,
+                        "violations": count,
+                        "worst": (count > 0).then(|| round(worst, 2)),
+                    });
+                }
                 cell["violations"] = json!(count);
                 cell["worst"] = json!((count > 0).then(|| round(worst, 2)));
                 (worst, cell, c.equipment.clone())
@@ -455,15 +588,34 @@ impl Session {
             .iter()
             .filter(|v| v.contingency.is_none())
             .count();
+        let after_count = done
+            .violations
+            .iter()
+            .filter(|v| !v.applied.is_empty())
+            .count();
         let summary = json!({
-            "options": { "sharing": analysis.options.sharing.name(), "qLimits": analysis.options.q_limits, "switches": analysis.options.switches },
+            "options": {
+                "sharing": analysis.options.sharing.name(), "qLimits": analysis.options.q_limits,
+                "switches": analysis.options.switches, "curative": analysis.options.curative,
+                "at": analysis.options.at.map(super::iso),
+            },
             "scenarioTime": done.scenario_time,
             "total": analysis.contingencies.len(),
             "solved": done.solved,
             "stalled": done.stalled.iter().map(|c| self.linked(c)).collect::<Vec<_>>(),
             "absent": done.absent.iter().map(|c| self.linked(c)).collect::<Vec<_>>(),
             "baseViolations": base,
-            "violations": done.violations.len() - base,
+            "violations": done.violations.len() - base - after_count,
+            "curative": analysis.options.curative.then(|| json!({
+                "contingencies": analysis.curative.len(),
+                "solved": done.curative_solved,
+                "stalled": done.curative_stalled.iter().map(|c| self.linked(c)).collect::<Vec<_>>(),
+                "violations": after_count,
+                "notApplied": done.not_applied,
+                "skipped": analysis.skipped.iter().map(|(c, a, why)| json!({
+                    "contingency": self.linked(c), "action": self.linked(a), "why": why,
+                })).collect::<Vec<_>>(),
+            })),
             "pastLimits": done.past_limits.iter().map(|p| json!({
                 "contingency": p.contingency.as_deref().map(|c| self.linked(c)),
                 "machine": self.linked(&p.machine), "mw": round(p.mw, 2), "limit": p.limit,

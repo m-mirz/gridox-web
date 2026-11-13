@@ -22,6 +22,10 @@ pub struct Options {
     pub q_limits: bool,
     /// The buses from the switches as the SSH sets them, rather than from the TP.
     pub switches: bool,
+    /// When intensity schedules are read, in seconds since 1970; the scenario time if `None`.
+    pub at: Option<i64>,
+    /// In a security analysis, each contingency solved again with its curative actions.
+    pub curative: bool,
 }
 
 impl Default for Options {
@@ -32,6 +36,8 @@ impl Default for Options {
             sharing: ImbalanceSharing::Reference,
             q_limits: true,
             switches: false,
+            at: None,
+            curative: false,
         }
     }
 }
@@ -344,7 +350,7 @@ impl Session {
         if !self.dataset.entries.contains_key(action) {
             return json!({ "error": format!("`{action}` is no remedial action of these files") });
         }
-        let edits = self.action_changes(action);
+        let edits = self.action_changes(action, options.at);
         if !edits.iter().any(|c| c.after.is_some()) {
             let why: Vec<String> = edits.iter().filter_map(|c| c.note.clone()).collect();
             return json!({ "error": if why.is_empty() { "the action changes nothing: it has no alteration with a value".to_string() } else { format!("the action changes nothing: {}", why.join("; ")) } });

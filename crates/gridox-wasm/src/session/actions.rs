@@ -85,6 +85,37 @@ impl Session {
         found.first().and_then(|(_, t)| seconds(t))
     }
 
+    /// The scenario time, and every time a point of an intensity schedule is at: the times
+    /// schedules can be read at.
+    pub fn schedule_times(&self) -> Value {
+        let mut times: Vec<i64> = Vec::new();
+        for schedule in self
+            .dataset
+            .by_type
+            .get("nc:GridStateIntensitySchedule")
+            .into_iter()
+            .flatten()
+        {
+            for point in self.naming("GenericValueTimePoint.GenericValueSchedule", schedule) {
+                if let Some(t) = self
+                    .dataset
+                    .entries
+                    .get(point)
+                    .and_then(|p| p.get_str("GenericValueTimePoint.atTime"))
+                    .and_then(seconds)
+                {
+                    times.push(t);
+                }
+            }
+        }
+        times.sort_unstable();
+        times.dedup();
+        json!({
+            "scenario": self.scenario_time().map(super::iso),
+            "points": times.into_iter().map(super::iso).collect::<Vec<_>>(),
+        })
+    }
+
     /// The objects whose field `key` names `id`, in id order.
     fn naming(&self, key: &str, id: &str) -> Vec<&str> {
         let mut found: Vec<&str> = self
@@ -126,9 +157,10 @@ impl Session {
     }
 
     /// What applying the remedial action `action` changes, alteration by alteration.
-    pub(super) fn action_changes(&self, action: &str) -> Vec<Change> {
+    /// With `at`, schedules are read then rather than at the scenario time.
+    pub(super) fn action_changes(&self, action: &str, at: Option<i64>) -> Vec<Change> {
         let reg = type_registry();
-        let time = self.scenario_time();
+        let time = at.or_else(|| self.scenario_time());
         let mut out = Vec::new();
         for alteration_id in self.naming(
             "GridStateAlteration.GridStateAlterationRemedialAction",
@@ -275,6 +307,9 @@ impl Session {
                     None
                 }
             };
+            if after.is_some() && after == before {
+                change.note = Some("the value the object already has: no change".into());
+            }
             change.after = after.map(|a| written(attr.xsd, a));
             out.push(change);
         }

@@ -14,3 +14,7 @@ repository = "https://github.com/m-mirz/gridox-web"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Curative actions (gridoxide PR #36) are merged but not released: main at the merge.
+[patch.crates-io]
+gridoxide = { git = "https://github.com/m-mirz/gridoxide", rev = "0b5bee4a56db8a9ca697ff82fde7a13eab14b8fd" }

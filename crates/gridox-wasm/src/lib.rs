@@ -2,6 +2,8 @@
 
 mod session;
 
+pub use session::seconds;
+
 pub use session::{Checks, ClassCount, FileOutcome, PowerFlowOptions, Session, Summary};
 
 use wasm_bindgen::prelude::*;
@@ -93,7 +95,8 @@ impl JsSession {
 
     /// A power flow, the imbalance taken by `sharing` (`reference`, `capability` or `equal`), with
     /// reactive limits held if `q_limits`, the buses from the switches if `switches`; with
-    /// `action`, that remedial action applied, from the switches.
+    /// `action`, that remedial action applied, from the switches, its schedules read `at` a time
+    /// (`2024-11-20T02:30:00Z`) or at the scenario time.
     #[wasm_bindgen(js_name = powerFlow)]
     pub fn power_flow(
         &mut self,
@@ -101,12 +104,15 @@ impl JsSession {
         q_limits: bool,
         switches: bool,
         action: Option<String>,
+        at: Option<String>,
     ) -> Result<String, JsError> {
         let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
         let options = PowerFlowOptions {
             sharing,
             q_limits,
             switches,
+            at: at.as_deref().and_then(seconds),
+            curative: false,
         };
         Ok(match action {
             Some(action) => self.0.power_flow_applied(options, &action),
@@ -116,12 +122,16 @@ impl JsSession {
     }
 
     /// Readies a security analysis of the contingencies loaded; see [`Session::analysis_start`].
+    /// With `curative`, each contingency's curative actions, their schedules read `at` a time or
+    /// at the scenario time.
     #[wasm_bindgen(js_name = analysisStart)]
     pub fn analysis_start(
         &mut self,
         sharing: &str,
         q_limits: bool,
         switches: bool,
+        curative: bool,
+        at: Option<String>,
     ) -> Result<String, JsError> {
         let sharing = sharing.parse().map_err(|e: String| JsError::new(&e))?;
         Ok(self
@@ -130,6 +140,8 @@ impl JsSession {
                 sharing,
                 q_limits,
                 switches,
+                at: at.as_deref().and_then(seconds),
+                curative,
             })
             .to_string())
     }
@@ -137,6 +149,12 @@ impl JsSession {
     #[wasm_bindgen(js_name = analysisStep)]
     pub fn analysis_step(&mut self, count: usize) -> String {
         self.0.analysis_step(count).to_string()
+    }
+
+    /// The scenario time and the times intensity schedules hold points at.
+    #[wasm_bindgen(js_name = scheduleTimes)]
+    pub fn schedule_times(&self) -> String {
+        self.0.schedule_times().to_string()
     }
 
     #[wasm_bindgen(js_name = editState)]

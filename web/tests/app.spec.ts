@@ -16,6 +16,7 @@ const STATE = fixture('grid_state.xml');
 const SV = fixture('grid_SV.xml');
 const MORE = fixture('nc_CO_more.xml');
 const SCHEDULE = fixture('nc_RA_schedule.xml');
+const CURATIVE = fixture('nc_RA_curative.xml');
 const input = (page: Page) => page.getByLabel('Choose files');
 const folderInput = (page: Page) => page.getByLabel('Choose a folder');
 
@@ -625,6 +626,34 @@ ${many}
     if ((await page.evaluate(() => navigator.hardwareConcurrency)) > 1) {
       await expect(page.getByTestId('sa-options')).toContainText(/in [2-4] workers/);
     }
+  });
+
+  test('solves a contingency again after its curative actions, schedules read at the time chosen', async ({ page }) => {
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await input(page).setInputFiles([GRID, STATE, SV, NC, MORE, RA, CURATIVE, SCHEDULE]);
+    await expect(page.getByTestId('totals')).toContainText('from 8 files');
+    const sa = page.getByTestId('security');
+    await expect(sa.getByRole('button', { name: 'Run 4 contingencies' })).toBeVisible();
+    await sa.getByLabel('Curative actions').check();
+    await expect(sa.getByLabel('Buses from')).toBeDisabled();
+    await sa.getByRole('button', { name: 'Run 4 contingencies' }).click();
+    const curative = page.getByTestId('sa-curative');
+    await expect(curative).toContainText('Curative actions after 1 contingency, schedules read at the scenario time: 1 solved again; 0 violations after them.');
+    const nothing = page.getByTestId('sa-contingencies').getByRole('row', { name: /Nothing lost/ });
+    await expect(nothing.getByTestId('sa-after')).toContainText('0 violations');
+    await expect(nothing.getByTestId('sa-after')).toContainText('Open Breaker A');
+    // The times to read schedules at: the scenario time, and the schedule's one point.
+    await expect(sa.getByTestId('sa-at').locator('option')).toHaveText(['the scenario time, 2026-01-01T12:00:00Z', '2026-01-01T10:00:00Z']);
+    // Without the schedule, "Keep Breaker A closed" takes its range's value and, applied after
+    // "Open Breaker A", closes the breaker again: the violation stays.
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await input(page).setInputFiles([GRID, STATE, SV, NC, MORE, RA, CURATIVE]);
+    await expect(page.getByTestId('totals')).toContainText('from 7 files');
+    await expect(sa.getByRole('button', { name: 'Run 4 contingencies' })).toBeVisible();
+    await sa.getByLabel('Curative actions').check();
+    await sa.getByRole('button', { name: 'Run 4 contingencies' }).click();
+    await expect(curative).toContainText('1 violation after them.');
+    await expect(nothing.getByTestId('sa-after')).toContainText('1 violation, worst 133.1 %');
   });
 
   test('a model without contingencies has no analysis', async ({ page }) => {
