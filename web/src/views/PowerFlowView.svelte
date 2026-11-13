@@ -2,7 +2,7 @@
   import type { Reveal } from '../grid/model';
   import { count } from '../grid/model';
   import type { WorkerClient } from '../worker/client';
-  import type { ComponentStatus, Linked, PowerFlow, Sharing } from '../worker/protocol';
+  import type { ComponentStatus, Linked, PowerFlow, ScheduleTimes, Sharing } from '../worker/protocol';
   import Links from './Links.svelte';
 
   /**
@@ -32,6 +32,9 @@
   /** A remedial action to apply, by mRID: the switch states it sets, solved from the switches. */
   let action = $state('');
   let actions = $state.raw<Linked[]>([]);
+  /** When the action's schedules are read: '' for the scenario time. */
+  let at = $state('');
+  let times = $state.raw<ScheduleTimes>({ scenario: null, points: [] });
   let solving = $state(false);
   let flow = $state.raw<PowerFlow | null>(null);
   let failed = $state<string | null>(null);
@@ -45,10 +48,15 @@
     action = '';
     onresult(null);
     let live = true;
-    // The actions that set a switch: those a solve from the switches can apply.
-    client.request<'remedialActions'>({ kind: 'remedialActions' }).then((found) => {
-      if (live) actions = found.filter((a) => a.changes.some((c) => c.after !== null)).map((a) => ({ id: a.id, label: a.label, class: a.class }));
-    });
+    // The actions that alter something; whether they give it a value depends on when their schedules are read.
+    Promise.all([client.request<'remedialActions'>({ kind: 'remedialActions' }), client.request<'scheduleTimes'>({ kind: 'scheduleTimes' })]).then(
+      ([found, t]) => {
+        if (!live) return;
+        actions = found.filter((a) => a.changes.length).map((a) => ({ id: a.id, label: a.label, class: a.class }));
+        times = t;
+        if (at && !t.points.includes(at)) at = '';
+      },
+    );
     return () => {
       live = false;
     };
@@ -59,7 +67,14 @@
     failed = null;
     const started = performance.now();
     try {
-      flow = await client.request<'powerFlow'>({ kind: 'powerFlow', sharing, qLimits, switches: switches || !!action, action: action || null });
+      flow = await client.request<'powerFlow'>({
+        kind: 'powerFlow',
+        sharing,
+        qLimits,
+        switches: switches || !!action,
+        action: action || null,
+        at: action && at ? at : null,
+      });
       elapsed = performance.now() - started;
       onresult(flow.error ? null : flow);
     } catch (error) {
@@ -156,6 +171,15 @@
             {#each actions as a (a.id)}<option value={a.id}>{a.label ?? a.id}</option>{/each}
           </select>
         </label>
+        {#if action && times.points.length}
+          <label>
+            Schedules read at
+            <select bind:value={at} disabled={solving}>
+              <option value="">the scenario time{times.scenario ? `, ${times.scenario}` : ''}</option>
+              {#each times.points as t (t)}<option value={t}>{t}</option>{/each}
+            </select>
+          </label>
+        {/if}
       {/if}
       <button type="button" onclick={solve} disabled={solving}>{solving ? 'Solving…' : flow ? 'Solve again' : 'Solve'}</button>
       {#if flow && elapsed !== null && !solving}<span class="sub">{Math.round(elapsed).toLocaleString('en')} ms, by gridoxide, in this browser</span>{/if}

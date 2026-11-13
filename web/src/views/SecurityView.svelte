@@ -3,7 +3,7 @@
   import { count } from '../grid/model';
   import { WorkerClient } from '../worker/client';
   import ModelWorker from '../worker/worker?worker';
-  import type { Analysis, AnalysisViolation, SarHeader, SarResult, Sharing } from '../worker/protocol';
+  import type { Analysis, AnalysisViolation, SarHeader, SarResult, ScheduleTimes, Sharing } from '../worker/protocol';
   import Links from './Links.svelte';
 
   /**
@@ -30,6 +30,10 @@
   let sharing = $state<Sharing>('capability');
   let qLimits = $state(false);
   let switches = $state(false);
+  /** Each contingency solved again with its curative actions, their schedules read `at` a time ('' for the scenario time). */
+  let curative = $state(false);
+  let at = $state('');
+  let times = $state.raw<ScheduleTimes>({ scenario: null, points: [] });
   let running = $state(false);
   let stopping = false;
   let progress = $state<{ done: number; total: number } | null>(null);
@@ -54,11 +58,17 @@
     stopped = null;
     open = null;
     let current = true;
-    Promise.all([client.request<'contingencies'>({ kind: 'contingencies' }), client.request<'sarResults'>({ kind: 'sarResults' })]).then(
-      ([c, s]) => {
+    Promise.all([
+      client.request<'contingencies'>({ kind: 'contingencies' }),
+      client.request<'sarResults'>({ kind: 'sarResults' }),
+      client.request<'scheduleTimes'>({ kind: 'scheduleTimes' }),
+    ]).then(
+      ([c, s, t]) => {
         if (!current) return;
         contingencies = c.length;
         supplied = s;
+        times = t;
+        if (at && !t.points.includes(at)) at = '';
         if (!c.length && s.length) tab = 'supplied';
       },
     );
@@ -94,7 +104,8 @@
     const started = performance.now();
     const pool: WorkerClient[] = [];
     try {
-      const first = await client.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits, switches });
+      const options = { sharing, qLimits, switches, curative, at: curative && at ? at : null };
+      const first = await client.request<'analysisStart'>({ kind: 'analysisStart', ...options });
       if (first.error) {
         failed = first.error;
         return;
@@ -135,7 +146,7 @@
           shares.push(
             (async () => {
               await helper.request<'loadOnly'>({ kind: 'loadOnly', files });
-              const ready = await helper.request<'analysisStart'>({ kind: 'analysisStart', sharing, qLimits, switches });
+              const ready = await helper.request<'analysisStart'>({ kind: 'analysisStart', ...options });
               if (ready.error || ready.total !== total) return;
               helping += 1;
               await work(async (range) => {
@@ -249,11 +260,23 @@
           <label><input type="checkbox" bind:checked={qLimits} disabled={running} /> Hold reactive limits</label>
           <label>
             Buses from
-            <select bind:value={switches} disabled={running}>
+            <select bind:value={switches} disabled={running || curative}>
               <option value={false}>the TP files</option>
               <option value={true}>the switches</option>
             </select>
           </label>
+          <label title="Each contingency solved again with the remedial actions its ContingencyWithRemedialAction includes, from the switches">
+            <input type="checkbox" bind:checked={curative} disabled={running} onchange={() => curative && (switches = true)} /> Curative actions
+          </label>
+          {#if curative}
+            <label>
+              Schedules read at
+              <select bind:value={at} disabled={running} data-testid="sa-at">
+                <option value="">the scenario time{times.scenario ? `, ${times.scenario}` : ''}</option>
+                {#each times.points as t (t)}<option value={t}>{t}</option>{/each}
+              </select>
+            </label>
+          {/if}
           {#if running}
             <button type="button" onclick={() => (stopping = true)}>Stop</button>
           {:else}
@@ -282,6 +305,28 @@
           {#if elapsed !== null}{(elapsed / 1000).toFixed(1)} s in this browser{workers > 1 ? `, in ${workers} workers` : ''}.{/if}
           {#if analysis.pastLimits.length}Sharing took machines past their limits {count(analysis.pastLimits.length, 'time')}.{/if}
         </p>
+        {#if analysis.curative}
+          {@const c = analysis.curative}
+          <p class="verdict" data-testid="sa-curative">
+            Curative actions after {count(c.contingencies, 'contingency', 'contingencies')}, schedules read at {analysis.options.at ?? 'the scenario time'}:
+            {c.solved.toLocaleString('en')} solved again{c.stalled.length ? `, ${c.stalled.length.toLocaleString('en')} did not converge` : ''};
+            {count(c.violations, 'violation')} after them.
+          </p>
+          {#if c.stalled.length}
+            <p class="note">Not converging with their curative actions: <Links inline links={c.stalled} {onnavigate} />.</p>
+          {/if}
+          {#if c.skipped.length || c.notApplied.length}
+            <details class="note" data-testid="sa-skipped">
+              <summary>{count(c.skipped.length + c.notApplied.length, 'curative change')} not made</summary>
+              <ul>
+                {#each c.skipped as k, i (i)}
+                  <li><Links inline links={[k.action]} {onnavigate} /> after <Links inline links={[k.contingency]} {onnavigate} />: {k.why}</li>
+                {/each}
+                {#each c.notApplied as why, i (i)}<li>{why}</li>{/each}
+              </ul>
+            </details>
+          {/if}
+        {/if}
         {#if analysis.stalled.length}
           <p class="note" data-testid="sa-stalled">
             Not in the SAR, which has no place for them: {count(analysis.stalled.length, 'contingency', 'contingencies')} that did not converge,
@@ -309,13 +354,14 @@
       {#snippet details(key: string)}
         {#if open === key}
           <tr class="inner">
-            <td colspan="7">
+            <td colspan="8">
               {#if !violations.length}<span class="sub">No violation.</span>{/if}
               {#each violations as v (v.terminal + v.limit.id + (v.contingency?.id ?? ''))}
                 <div class="violation">
                   {#if key.startsWith('t:')}
-                    <span class="sub">{v.contingency ? 'after' : 'base case'}</span> {#if v.contingency}<Links inline links={[v.contingency]} {onnavigate} />{/if}:
+                    <span class="sub">{v.contingency ? 'after' : 'base case'}</span> {#if v.contingency}<Links inline links={[v.contingency]} {onnavigate} />{/if}{#if v.applied.length}<span class="sub">, then</span> <Links inline links={v.applied} {onnavigate} />{/if}:
                   {:else}
+                    {#if v.applied.length}<span class="sub">after</span> <Links inline links={v.applied} {onnavigate} />,{/if}
                     <Links inline links={v.equipment ? [v.equipment] : []} {onnavigate} />:
                   {/if}
                   {fixed(v.amps, 0)} A on <Links inline links={[v.limit]} {onnavigate} /> <small>({v.kind}, {fixed(v.limitAmps, 0)} A)</small>, <strong>{fixed(v.percent)} %</strong>
@@ -330,11 +376,11 @@
         <div class="scroll">
           <table data-testid="sa-contingencies">
             <thead>
-              <tr><th>Contingency</th><th>Outcome</th><th>Equipment lost</th><th>Violations</th><th>Worst</th><th></th><th></th></tr>
+              <tr><th>Contingency</th><th>Outcome</th><th>Equipment lost</th><th>Violations</th><th>Worst</th><th>After curative actions</th><th></th><th></th></tr>
             </thead>
             <tbody>
               <tr class="base">
-                <td>Base case</td><td>solved</td><td></td><td>{analysis.baseViolations.toLocaleString('en')}</td><td></td>
+                <td>Base case</td><td>solved</td><td></td><td>{analysis.baseViolations.toLocaleString('en')}</td><td></td><td></td>
                 <td><button type="button" aria-expanded={open === 'base'} onclick={() => toggle('base', null, null)}>Violations</button></td><td></td>
               </tr>
               {@render details('base')}
@@ -345,7 +391,13 @@
                   <td><Links links={c.equipment} {onnavigate} /></td>
                   <td>{c.outcome === 'solved' ? c.violations.toLocaleString('en') : ''}</td>
                   <td>{c.worst === null ? '' : `${fixed(c.worst)} %`}</td>
-                  <td><button type="button" disabled={!c.violations} aria-expanded={open === c.id} onclick={() => toggle(c.id, c.id, null)}>Violations</button></td>
+                  <td data-testid="sa-after">
+                    {#if c.after}
+                      {c.after.stalled ? 'did not converge' : `${count(c.after.violations, 'violation')}${c.after.worst === null ? '' : `, worst ${fixed(c.after.worst)} %`}`}
+                      <small><Links inline links={c.after.actions} {onnavigate} /></small>
+                    {/if}
+                  </td>
+                  <td><button type="button" disabled={!c.violations && !c.after?.violations} aria-expanded={open === c.id} onclick={() => toggle(c.id, c.id, null)}>Violations</button></td>
                   <td><button type="button" disabled={!c.grid.length} onclick={() => onhighlight(c.grid)}>Show on grid</button></td>
                 </tr>
                 {@render details(c.id)}
