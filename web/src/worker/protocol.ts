@@ -310,10 +310,20 @@ export interface AnalysisProgress {
   error: string | null;
   done?: number;
   total: number;
+  /** The curative actions found, at its start. */
+  curative?: number;
+}
+
+/** The scenario time, and the times intensity schedules hold points at. */
+export interface ScheduleTimes {
+  scenario: string | null;
+  points: string[];
 }
 
 export interface AnalysisViolation {
   contingency: Linked | null;
+  /** The curative actions applied; empty before any. */
+  applied: Linked[];
   terminal: string;
   equipment: Linked | null;
   limit: Linked;
@@ -325,7 +335,8 @@ export interface AnalysisViolation {
 
 /** A security analysis, by contingency and by element. Percentages are of the limit. */
 export interface Analysis {
-  options: { sharing: Sharing; qLimits: boolean; switches: boolean };
+  /** `at`: when schedules were read for curative actions, if not at the scenario time. */
+  options: { sharing: Sharing; qLimits: boolean; switches: boolean; curative: boolean; at: string | null };
   scenarioTime: string;
   total: number;
   solved: number;
@@ -334,7 +345,17 @@ export interface Analysis {
   /** Contingencies naming equipment the model lacks. */
   absent: Linked[];
   baseViolations: number;
+  /** After the contingencies, before any curative action. */
   violations: number;
+  /** With curative actions: what they gave, and what could not be applied. */
+  curative: {
+    contingencies: number;
+    solved: number;
+    stalled: Linked[];
+    violations: number;
+    notApplied: string[];
+    skipped: { contingency: Linked; action: Linked; why: string }[];
+  } | null;
   pastLimits: { contingency: Linked | null; machine: Linked; mw: number; limit: number }[];
   requires: string[];
   contingencies: (Linked & {
@@ -343,6 +364,8 @@ export interface Analysis {
     violations: number;
     worst: number | null;
     grid: Reveal[];
+    /** After its curative actions, if it has any. */
+    after?: { actions: Linked[]; stalled: boolean; violations: number; worst: number | null };
   })[];
   elements: {
     terminal: string;
@@ -459,8 +482,9 @@ export type Request =
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
   | { kind: 'schedules' }
-  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean; switches: boolean; action: string | null }
-  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean; switches: boolean }
+  | { kind: 'powerFlow'; sharing: Sharing; qLimits: boolean; switches: boolean; action: string | null; at: string | null }
+  | { kind: 'analysisStart'; sharing: Sharing; qLimits: boolean; switches: boolean; curative: boolean; at: string | null }
+  | { kind: 'scheduleTimes' }
   | { kind: 'analysisStep'; count: number }
   | { kind: 'analysisRange'; from: number; to: number }
   | { kind: 'analysisPart'; from: number; to: number }
@@ -510,6 +534,7 @@ export interface Answers {
   schedules: Schedules;
   powerFlow: PowerFlow;
   analysisStart: AnalysisProgress;
+  scheduleTimes: ScheduleTimes;
   analysisStep: AnalysisProgress;
   analysisRange: AnalysisProgress;
   /** A part of an analysis, for the worker merging it. */

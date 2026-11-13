@@ -984,7 +984,7 @@ impl Session {
                     })
                     .collect();
                 // What applying it changes: the switches it sets, as a column of their own.
-                let changes = self.action_changes(id);
+                let changes = self.action_changes(id, None);
                 for c in changes.iter().filter(|c| c.property == "Switch.open") {
                     let now = c.before.as_deref();
                     let after = c.after.as_deref().map(|a| a == "true");
@@ -1427,7 +1427,7 @@ impl Session {
 
 /// An `xsd:dateTime` as seconds since 1970, UTC: `2024-11-20T02:30:00Z`, with or without seconds'
 /// fractions (dropped) and an offset (`+01:00`; none is taken as UTC).
-fn seconds(text: &str) -> Option<i64> {
+pub fn seconds(text: &str) -> Option<i64> {
     let text = text.trim();
     let (date, time) = text.split_once('T')?;
     let mut d = date.splitn(3, '-');
@@ -1467,7 +1467,7 @@ fn seconds(text: &str) -> Option<i64> {
 }
 
 /// Seconds since 1970 as `2024-11-20T02:30:00Z`.
-fn iso(t: i64) -> String {
+pub(crate) fn iso(t: i64) -> String {
     let (days, rest) = (t.div_euclid(86_400), t.rem_euclid(86_400));
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -2233,7 +2233,7 @@ mod tests {
         session.add_file("nc_CO_more.xml", MORE);
         assert_eq!(
             session.analysis_start(PowerFlowOptions::default()),
-            json!({ "error": null, "total": 4 })
+            json!({ "error": null, "total": 4, "curative": 0 })
         );
         loop {
             let step = session.analysis_step(batch);
@@ -2242,6 +2242,122 @@ mod tests {
                 return session;
             }
         }
+    }
+
+    const CURATIVE: &str = include_str!("../../../web/tests/fixtures/nc_RA_curative.xml");
+
+    /// The analysis with curative actions, schedules read `at` a time.
+    fn curative(at: Option<&str>) -> Session {
+        let mut session = solvable();
+        for (name, text) in [
+            ("nc_CO_AE.xml", NC),
+            ("nc_CO_more.xml", MORE),
+            ("nc_RA.xml", RA),
+            ("nc_RA_curative.xml", CURATIVE),
+            ("nc_RA_schedule.xml", SCHEDULE),
+        ] {
+            session.add_file(name, text);
+        }
+        let options = PowerFlowOptions {
+            curative: true,
+            at: at.and_then(seconds),
+            ..Default::default()
+        };
+        assert_eq!(session.analysis_start(options)["error"], Value::Null);
+        while {
+            let step = session.analysis_step(10);
+            step["done"] != step["total"]
+        } {}
+        session
+    }
+
+    #[test]
+    fn curative_actions_are_solved_after_their_contingency_at_the_time_chosen() {
+        // At 12:00 both included actions open Breaker A (the schedule from 10:00): Birch is cut
+        // off, and the violation after "Nothing lost" goes.
+        let mut session = curative(None);
+        let result = session.analysis_result();
+        let c = &result["curative"];
+        assert_eq!(c["contingencies"], 1, "{c}");
+        assert_eq!(c["solved"], 1);
+        assert_eq!(c["violations"], 0);
+        let rows = result["contingencies"].as_array().unwrap();
+        let nothing = rows.iter().find(|r| r["label"] == "Nothing lost").unwrap();
+        assert_eq!(nothing["violations"], 1);
+        assert_eq!(nothing["after"]["violations"], 0);
+        let names: Vec<&str> = nothing["after"]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["Open Breaker A", "Keep Breaker A closed"]);
+        // Excluded, no curative action.
+        let load = rows
+            .iter()
+            .find(|r| r["label"] == "Loss of Load B")
+            .unwrap();
+        assert_eq!(load["after"], Value::Null);
+        assert_eq!(result["violations"], 1);
+
+        // At 09:00 the schedule has no value yet: only "Open Breaker A" acts, which is said.
+        let early = curative(Some("2026-01-01T09:00:00Z")).analysis_result();
+        assert_eq!(early["options"]["at"], "2026-01-01T09:00:00Z");
+        let skipped = early["curative"]["skipped"].as_array().unwrap();
+        assert_eq!(skipped.len(), 1, "{skipped:?}");
+        assert_eq!(skipped[0]["action"]["label"], "Keep Breaker A closed");
+        assert!(
+            skipped[0]["why"]
+                .as_str()
+                .unwrap()
+                .contains("no time point")
+        );
+        assert_eq!(early["curative"]["violations"], 0);
+    }
+
+    #[test]
+    fn a_sar_names_the_curative_actions_its_results_come_after() {
+        // At 09:00, "Keep Breaker A closed" from its range keeps the breaker closed only with
+        // the other action left out: here the violation stays after the action that does nothing.
+        let mut session = solvable();
+        for (name, text) in [
+            ("nc_CO_AE.xml", NC),
+            ("nc_CO_more.xml", MORE),
+            ("nc_RA.xml", RA),
+            ("nc_RA_curative.xml", &CURATIVE.replace("000000000d01\"/>\n    <nc:ContingencyWithRemedialAction.combinationConstraintKind rdf:resource=\"https://cim4.eu/ns/nc#ElementCombinationConstraintKind.included", "000000000d01\"/>\n    <nc:ContingencyWithRemedialAction.combinationConstraintKind rdf:resource=\"https://cim4.eu/ns/nc#ElementCombinationConstraintKind.excluded")),
+        ] {
+            session.add_file(name, text);
+        }
+        let options = PowerFlowOptions {
+            curative: true,
+            ..Default::default()
+        };
+        assert_eq!(session.analysis_start(options)["curative"], 1);
+        while {
+            let step = session.analysis_step(10);
+            step["done"] != step["total"]
+        } {}
+        let result = session.analysis_result();
+        assert_eq!(result["curative"]["violations"], 1);
+        let after: Vec<Value> = session
+            .analysis_violations(Some("_00000000-0000-4000-8000-000000000701"), None)
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["applied"].clone())
+            .collect();
+        assert_eq!(after.len(), 2);
+        let sar = session.sar(&header()).unwrap();
+        let decoded = cimmodel::decode::CimDataset::decode_str(&sar).unwrap();
+        let applied = &decoded.by_type["nc:RemedialActionApplied"];
+        assert_eq!(applied.len(), 1);
+        let element = &decoded.entries[&applied[0]];
+        assert_eq!(
+            element
+                .get_ref("RemedialActionApplied.RemedialAction")
+                .map(mrid_of),
+            Some("_00000000-0000-4000-8000-000000000d11")
+        );
     }
 
     fn header() -> gridoxide::security_analysis::SarHeader {
