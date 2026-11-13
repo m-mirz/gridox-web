@@ -13,6 +13,7 @@
     version,
     findings,
     checking,
+    folderOpen = false,
     onundo,
   }: {
     client: WorkerClient;
@@ -20,6 +21,8 @@
     version: number;
     findings: FindingsSummary | null;
     checking: boolean;
+    /** A folder is open to save into in place: no other is asked for. */
+    folderOpen?: boolean;
     onundo: () => void;
   } = $props();
 
@@ -92,7 +95,7 @@
       {#each files.edited as name (name)}
         <button type="button" disabled={!ready} onclick={() => download(name)}>Download {name}</button>
       {/each}
-      {#if canSave && files.edited.length}
+      {#if canSave && !folderOpen && files.edited.length}
         <button type="button" disabled={!ready} onclick={save}>Save all to a folder…</button>
       {/if}
     </div>

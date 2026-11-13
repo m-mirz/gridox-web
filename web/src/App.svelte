@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { droppedFiles } from './drop';
+  import { folder, forget, remembered } from './folder.svelte';
+  import FolderBar from './views/FolderBar.svelte';
   import Browse from './views/Browse.svelte';
   import DatasetsView from './views/DatasetsView.svelte';
   import DropZone from './views/DropZone.svelte';
@@ -110,6 +112,8 @@
   }
 
   function run(request: ModelRequest): Promise<void> {
+    // The files a folder gave are gone with the model: nothing is to be saved into it.
+    if (request.kind === 'clear') void forget();
     return enqueue(() => perform(request));
   }
 
@@ -169,6 +173,7 @@
   }
 
   onMount(() => {
+    void remembered();
     void run({ kind: 'restore' });
   });
 </script>
@@ -216,7 +221,13 @@
       <NetworkCodesView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <PowerFlowView {client} {version} onresult={(f) => (flow = f)} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
       <SecurityView {client} {version} onnavigate={(id) => browse?.navigate(id)} onhighlight={(at) => browse?.highlight(at) ?? 0} />
-      <EditedFiles {client} {version} {findings} {checking} onundo={undo} />
+      <FolderBar
+        {client}
+        {version}
+        names={summary.files.filter((f) => f.status === 'loaded').map((f) => f.name)}
+        ready={!checking && findings !== null}
+      />
+      <EditedFiles {client} {version} {findings} {checking} folderOpen={folder.connected} onundo={undo} />
       <Browse bind:this={browse} {client} {version} {findingsVersion} validated={findings !== null} flow={flow?.overlay ?? null} onedited={edited} />
     {/if}
   {/if}
