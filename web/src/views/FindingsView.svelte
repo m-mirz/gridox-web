@@ -68,8 +68,8 @@
           <li>
             <details ontoggle={(event) => open(event, rule.rule)}>
               <summary>
-                <span class={rule.severity}>{rule.severity}</span>
-                <strong>{rule.name || rule.rule}</strong>
+                <span class="badge {rule.severity}">{rule.severity}</span>
+                <strong class="name">{rule.name || rule.rule}</strong>
                 <span class="count">{rule.count.toLocaleString('en')}</span>
               </summary>
               {#if rule.description}<p class="sub">{rule.description}</p>{/if}
@@ -135,36 +135,45 @@
   }
 
   .rules {
-    max-height: 24rem;
-    overflow: auto;
+    margin-top: 0.5rem;
+    overflow: hidden;
+    background: var(--surface);
     border: 1px solid var(--line);
+    border-radius: var(--radius-l);
   }
 
   .rules > li {
-    padding: 0.25rem 0.5rem;
+    padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--line);
   }
 
+  .rules > li:last-child {
+    border-bottom: none;
+  }
+
   .rules summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     cursor: pointer;
     overflow-wrap: anywhere;
+  }
+
+  .rules .badge {
+    flex-shrink: 0;
+    min-width: 4.75rem;
+  }
+
+  .rules .name {
+    flex-grow: 1;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 500;
   }
 
   .count {
     color: var(--muted);
     font-variant-numeric: tabular-nums;
-  }
-
-  .violation {
-    color: var(--violation);
-  }
-
-  .warning {
-    color: var(--warning);
-  }
-
-  .info {
-    color: var(--info);
   }
 
   .found li {

@@ -29,6 +29,11 @@ harness and gridoxide's tests record, the data's problems included. It takes Rel
 `../cimoxide/relicapgrid` (fetch it with `git submodule update --init --checkout relicapgrid` there), and skips without it. SAR_UC1
 validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/target/release/cimcli`.
 
+## Keys
+
+1 to 6 go to the views (Explore, Validation, Network codes, Power flow, Contingencies, Data
+quality), / to the search, Escape closes the inspector, and Ctrl or ⌘ with Z undoes the last edit.
+
 ## Licences
 
 gridox is licensed under the Apache License 2.0. The site it builds carries libraries under their
