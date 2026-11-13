@@ -136,7 +136,7 @@ async function walk(root: FileSystemDirectoryHandle): Promise<{ path: string; ha
  * input gives them, to load. Its XML files are the ones saved back; a zip's are only downloaded.
  * Null if the choice was cancelled.
  */
-export async function open(): Promise<File[] | null> {
+export async function open(): Promise<{ files: File[]; paths: string[] } | null> {
   let root: FileSystemDirectoryHandle;
   try {
     // @ts-expect-error Not in TypeScript's DOM library.
@@ -147,11 +147,13 @@ export async function open(): Promise<File[] | null> {
   }
   const found = await walk(root);
   const files: File[] = [];
+  const paths: string[] = [];
   const entries: Record<string, Entry> = {};
   const seen = new Map<string, number>();
   for (const { path, handle } of found) {
     const file = await handle.getFile();
     files.push(file);
+    paths.push(`${root.name}/${path}`);
     if (!/\.xml$/i.test(handle.name)) continue;
     seen.set(handle.name, (seen.get(handle.name) ?? 0) + 1);
     entries[handle.name] = { path, handle, lastModified: file.lastModified, ambiguous: false };
@@ -161,7 +163,7 @@ export async function open(): Promise<File[] | null> {
   folder.entries = entries;
   folder.connected = true;
   await persist();
-  return files;
+  return { files, paths };
 }
 
 /** What saving would do to a file. */

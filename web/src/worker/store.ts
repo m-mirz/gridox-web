@@ -21,7 +21,46 @@ async function storedNames(dir: FileSystemDirectoryHandle): Promise<string[]> {
   const found: string[] = [];
   // @ts-expect-error TypeScript's DOM library lacks the directory's iterator.
   for await (const name of dir.keys()) found.push(name as string);
-  return found.sort();
+  // The model's files, not what is kept about them.
+  return found.filter((n) => PREFIX.test(n)).sort();
+}
+
+/** What is kept about the files: each one's path, and those left out of the model. */
+export interface Meta {
+  paths: Record<string, string>;
+  excluded: string[];
+}
+
+const META = 'meta.json';
+
+/** Keeps `meta` beside the files. Failing that, it is only lost: the files still come back. */
+export async function keepMeta(meta: Meta): Promise<void> {
+  try {
+    const dir = await directory(false);
+    if (!dir) return;
+    const access = await (await dir.getFileHandle(META, { create: true })).createSyncAccessHandle();
+    try {
+      access.truncate(0);
+      access.write(new TextEncoder().encode(JSON.stringify(meta)), { at: 0 });
+      access.flush();
+    } finally {
+      access.close();
+    }
+  } catch (error) {
+    console.warn('What is known of the files could not be kept:', error);
+  }
+}
+
+/** What was kept about the files, or nothing. */
+export async function keptMeta(): Promise<Meta> {
+  try {
+    const dir = await directory(false);
+    const file = dir && (await (await dir.getFileHandle(META)).getFile());
+    const meta = file ? (JSON.parse(await file.text()) as Partial<Meta>) : {};
+    return { paths: meta.paths ?? {}, excluded: meta.excluded ?? [] };
+  } catch {
+    return { paths: {}, excluded: [] };
+  }
 }
 
 /** Keeps `files` after those kept already. Whether every file is kept: none are, otherwise. */

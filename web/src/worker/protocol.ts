@@ -12,12 +12,16 @@ export interface Summary {
   objects: number;
   foreign: number;
   classes: { class: string; objects: number }[];
+  /** The files loaded but left out of the model. */
+  excluded: string[];
 }
 
 /** The model after files came or went, and whether its files are kept in this browser. */
 export interface Loaded {
   summary: Summary;
   kept: boolean;
+  /** Each file's path in the folder or archive it came from, by name. */
+  paths: Record<string, string>;
 }
 
 export type Severity = 'violation' | 'warning' | 'info';
@@ -475,7 +479,8 @@ export interface Datasets {
 
 /** Each request, by kind. */
 export type Request =
-  | { kind: 'load'; files: File[] }
+  | { kind: 'load'; files: File[]; paths?: string[] }
+  | { kind: 'include'; excluded: string[] }
   | { kind: 'restore' }
   | { kind: 'clear' }
   | { kind: 'grid' }
@@ -529,6 +534,7 @@ export type Request =
 /** What each kind of request answers. */
 export interface Answers {
   load: Loaded;
+  include: Loaded;
   restore: Loaded;
   clear: Loaded;
   grid: Grid;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkerClient, type WorkerLike } from './client';
 import type { Envelope, Reply, Summary } from './protocol';
 
-const summary: Summary = { files: [], objects: 1, foreign: 0, classes: [] };
+const summary: Summary = { files: [], objects: 1, foreign: 0, classes: [], excluded: [] };
 const answer = (objects: number) => JSON.stringify({ summary: { ...summary, objects }, kept: false });
 
 class FakeWorker implements WorkerLike {

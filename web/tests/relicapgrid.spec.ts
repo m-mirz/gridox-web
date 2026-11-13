@@ -9,7 +9,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { ALL_GRID, ALL_NC, AREAS, BOUNDARY, CGM, CO, COMMON, EVERYTHING, PRESENT, REFERENCE, SUPPLIED_SAR, area, withBoundary } from './relicapgrid/files';
+import { ALL_GRID, ALL_NC, AREAS, BOUNDARY, CGM, CO, COMMON, EVERYTHING, PRESENT, REFERENCE, ROOT, SUPPLIED_SAR, area, withBoundary } from './relicapgrid/files';
 import { at, validated, view } from './views';
 
 /** cimoxide's CLI, to validate what the app writes: `$CIMCLI`, else a release build beside this checkout. */
@@ -73,6 +73,22 @@ for (const a of AREAS) {
     await expect((await at(page, 'pf-components'))).toContainText(PF[a].sv);
   });
 }
+
+// The whole dataset loaded once, the model then chosen from it: Svedala's IGM ticked in alone
+// gives what loading it alone gives.
+test('the whole instance loaded once, one IGM chosen from it', async ({ page }) => {
+  await page.getByLabel('Choose a folder').setInputFiles(ROOT);
+  const tree = page.getByTestId('file-tree');
+  await expect(tree.getByTestId('included')).toContainText('in the model', { timeout: 200_000 });
+  await tree.getByRole('button', { name: 'None' }).click();
+  // After the whole instance is validated, which the model's change waits for.
+  await expect(tree.getByTestId('included')).toContainText(/^0 of /, { timeout: 200_000 });
+  for (const folder of ['Svedala', 'commonData']) await tree.getByLabel(`Folder ${folder} in the model`).check();
+  await expect(page.getByTestId('totals')).toContainText(`from ${area('Svedala').length} files`, { timeout: 200_000 });
+  await solve(page);
+  await expect(page.getByTestId('pf-verdict')).toHaveText(PF.Svedala.verdict);
+  await expect(page.getByTestId('pf-components')).toContainText(PF.Svedala.sv);
+});
 
 test('PF_UC1 Espheim converges without reactive limits', async ({ page }) => {
   await load(page, area('Espheim'));

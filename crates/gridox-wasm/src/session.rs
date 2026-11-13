@@ -45,6 +45,8 @@ pub struct Summary {
     pub foreign: usize,
     /// By class, most objects first.
     pub classes: Vec<ClassCount>,
+    /// The files loaded but left out of the model.
+    pub excluded: Vec<String>,
 }
 
 /// How many search hits the page lists.
@@ -226,6 +228,7 @@ impl Session {
             objects: self.dataset.entries.len(),
             foreign: self.dataset.foreign.len(),
             classes,
+            excluded: self.texts.aside.iter().map(|(n, _)| n.clone()).collect(),
         }
     }
 
@@ -2369,6 +2372,40 @@ mod tests {
                 .iter()
                 .all(|r| r["target"] != "_00000000-0000-4000-8000-000000000c01")
         );
+    }
+
+    #[test]
+    fn files_left_out_of_the_model_come_back_as_they_were() {
+        let mut session = solvable();
+        session.add_file("nc_CO_AE.xml", NC);
+        let all = session.summary().objects;
+        let contingency = "_00000000-0000-4000-8000-000000000c01";
+        assert!(session.dataset.entries.contains_key(contingency));
+        // An edit, then the file left out: the model without it, its text kept.
+        session.edit_set(contingency, "IdentifiedObject.name", "Lost");
+        session.set_excluded(&["nc_CO_AE.xml".to_string()]);
+        assert!(!session.dataset.entries.contains_key(contingency));
+        assert!(session.summary().objects < all);
+        assert_eq!(session.summary().excluded, ["nc_CO_AE.xml"]);
+        assert!(session.file_text("nc_CO_AE.xml").unwrap().contains("Lost"));
+        assert_eq!(session.edit_state()["undo"], 0);
+        // Back, in its place, with the edit.
+        session.set_excluded(&[]);
+        assert_eq!(session.summary().objects, all);
+        assert_eq!(
+            session.dataset.entries[contingency].get_str("IdentifiedObject.name"),
+            Some("Lost")
+        );
+        let order: Vec<&str> = session
+            .texts
+            .files
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect();
+        assert_eq!(order.last(), Some(&"nc_CO_AE.xml"));
+        // Names not loaded are no matter.
+        session.set_excluded(&["nothing.xml".to_string()]);
+        assert!(session.summary().excluded.is_empty());
     }
 
     fn random() -> Vec<u8> {
