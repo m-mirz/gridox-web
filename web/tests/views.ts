@@ -10,6 +10,7 @@ const VIEWS: [string, string[]][] = [
   ['Network codes', ['network-codes', 'no-network-codes', 'applied', 'assessed-elements', 'contingencies', 'exclusive', 'remedial-actions', 'schedules', 'timeline']],
   ['Power flow', ['power-flow']],
   ['Contingencies', ['security', 'no-contingencies']],
+  ['Guide', ['guide', 'guide-step']],
   ['Data quality', ['datasets', 'datasets-summary', 'dataset-files', 'twice', 'conflicts', 'unresolved', 'classes', 'boundary-points']],
 ];
 

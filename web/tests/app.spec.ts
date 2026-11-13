@@ -212,6 +212,22 @@ test('loads an example from its repository, and says whose it is', async ({ page
   await expect(page.getByTestId('example-attribution')).toContainText('ReliCapGrid © ENTSO-E');
   await expect(page.getByTestId('file-tree').getByLabel('Folder Svedala in the model')).toBeVisible();
 });
+
+test('the guide lists the use cases, and a step ticks in its files and goes to them', async ({ page }) => {
+  const model = readFileSync(EQ, 'utf8');
+  await page.route('https://raw.githubusercontent.com/**', (route) => route.fulfill({ status: 200, body: model, headers: { 'access-control-allow-origin': '*' } }));
+  await page.getByRole('button', { name: 'Follow the SV-IOP 2026 guide' }).click();
+  const guide = page.getByTestId('guide');
+  await expect(guide).toBeVisible({ timeout: 60_000 });
+  await expect(guide.getByRole('listitem')).toHaveCount(18);
+  await expect(page).toHaveURL(/#guide$/);
+  await guide.getByRole('button', { name: 'PF_UC1 · Power flow' }).click();
+  await expect(page.getByTestId('guide-step')).toContainText('The report asks');
+  await page.getByTestId('guide-step').getByRole('button', { name: 'Show me' }).click();
+  // Svedala, its network codes and the common data: 20 of the 160.
+  await expect(page.getByTestId('file-tree').getByTestId('included')).toHaveText('20 of 160 in the model', { timeout: 60_000 });
+  await expect(page).toHaveURL(/#power-flow$/);
+});
 });
 
 test('says what software it carries, under which licences, and links to it', async ({ page }) => {

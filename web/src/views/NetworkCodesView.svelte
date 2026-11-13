@@ -25,6 +25,11 @@
   let actions = $state.raw<RemedialAction[]>([]);
   let schedules = $state.raw<Schedules>({ groups: [], exclusive: [] });
   let tab = $state<'contingencies' | 'assessed' | 'actions' | 'schedules'>('contingencies');
+
+  /** Shows table `to`, as the guide asks. */
+  export function showTab(to: 'contingencies' | 'assessed' | 'actions' | 'schedules') {
+    tab = to;
+  }
   /** The schedule groups on the timeline, and the times marked across it. */
   let picked = $state<string[]>([]);
   let marks = $state.raw<{ at: string; label: string }[]>([]);

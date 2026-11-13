@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { droppedFiles } from './drop';
-  import { ATTRIBUTION, COMMIT, FILES, LICENSE, MEGABYTES, REPOSITORY, fetchExample } from './example';
+  import { ATTRIBUTION, COMMIT, FILES, FOLDER, LICENSE, MEGABYTES, REPOSITORY, fetchExample } from './example';
+  import type { Step } from './guide';
+  import GuideView from './views/GuideView.svelte';
   import { forget, remembered } from './folder.svelte';
   import { findingsText } from './grid/model';
   import type { Reveal } from './grid/model';
@@ -190,6 +192,7 @@
     { id: 'power-flow', label: 'Power flow' },
     { id: 'contingencies', label: 'Contingencies' },
     { id: 'data', label: 'Data quality' },
+    { id: 'guide', label: 'Guide' },
   ] as const;
   type View = (typeof VIEWS)[number]['id'];
   const viewOf = (hash: string): View => (VIEWS.find((v) => `#${v.id}` === hash)?.id ?? 'explore') as View;
@@ -255,6 +258,34 @@
       fetching = null;
       notice = `The example could not be fetched: ${failure}`;
     }
+  }
+
+  let codes = $state<NetworkCodesView>();
+  const exampleLoaded = () => Object.values(paths).some((p) => p.startsWith(`${FOLDER}/`));
+
+  /** The guide, from the welcome page: the example loaded, and the guide shown. */
+  async function startGuide() {
+    if (!exampleLoaded()) await loadExample();
+    if (exampleLoaded()) go('guide');
+  }
+
+  /** A step of the guide: the example loaded, the files it needs ticked in, and it shown. */
+  async function showStep(step: Step) {
+    if (!exampleLoaded()) await loadExample();
+    if (!summary || !exampleLoaded()) throw new Error('the example could not be loaded');
+    const prefix = `${FOLDER}/`;
+    const excluded = summary.files
+      .filter((f) => f.status === 'loaded')
+      .map((f) => f.name)
+      .filter((name) => {
+        const path = paths[name] ?? '';
+        return !(path.startsWith(prefix) && step.files(path.slice(prefix.length)));
+      });
+    const now = [...summary.excluded].sort().join('\n');
+    if ([...excluded].sort().join('\n') !== now) await run({ kind: 'include', excluded });
+    if (step.object) navigate(step.object);
+    else go(step.view);
+    if (step.tab) codes?.showTab(step.tab);
   }
 
   /** The edits made, for the top bar's Undo and count; asked again whenever the model changes. */
@@ -432,7 +463,7 @@
             <FindingsView {client} {findings} {checking} {checks} onchecks={changeChecks} onnavigate={navigate} />
           </div>
           <div class="view page" hidden={view !== 'codes'}>
-            <NetworkCodesView {client} {version} onnavigate={navigate} onhighlight={highlight} />
+            <NetworkCodesView bind:this={codes} {client} {version} onnavigate={navigate} onhighlight={highlight} />
           </div>
           <div class="view page" hidden={view !== 'power-flow'}>
             <PowerFlowView {client} {version} onresult={(f) => (flow = f)} onnavigate={navigate} onhighlight={highlight} />
@@ -444,6 +475,9 @@
             <DatasetsView {client} {findingsVersion} onnavigate={navigate} />
             <BoundaryView {client} {findingsVersion} onnavigate={navigate} />
             <SummaryView {summary} part="classes" />
+          </div>
+          <div class="view page" hidden={view !== 'guide'}>
+            <GuideView busy={busy || !!fetching} onshow={showStep} />
           </div>
         {:else}
           <div class="view page"><p class="sub">No objects in the files loaded.</p></div>
@@ -457,6 +491,7 @@
       <DropZone {busy} compact={false} onfiles={(files, paths) => run({ kind: 'load', files, paths })} />
       <div class="example" data-testid="example">
         <button type="button" disabled={busy || !!fetching} onclick={loadExample}>Load an example: ReliCapGrid</button>
+        <button type="button" class="primary" disabled={busy || !!fetching} onclick={startGuide}>Follow the SV-IOP 2026 guide</button>
         {#if fetching}
           <span class="sub" role="status"><progress max={fetching.total} value={fetching.done}></progress> {fetching.done} of {fetching.total} files</span>
         {:else}
