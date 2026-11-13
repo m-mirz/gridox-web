@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 mod actions;
+mod boundary;
 mod edit;
 mod power_flow;
 mod security;
@@ -34,11 +35,41 @@ pub enum FileOutcome {
         /// Who made it, by its header: the modelling authority's or the publisher's name.
         #[serde(skip_serializing_if = "Option::is_none")]
         maker: Option<String>,
+        /// Its header declares an equipment profile: what an IGM's equipment is defined in.
+        #[serde(skip)]
+        equipment: bool,
     },
     Skipped {
         name: String,
         reason: String,
     },
+}
+
+/// Whether a file's header declares an equipment profile (CGMES's CoreEquipment, or EQ).
+fn is_equipment(dataset: &CimDataset) -> bool {
+    dataset
+        .entries
+        .values()
+        .chain(dataset.foreign.values())
+        .filter(|e| HEADERS.contains(&e.local_name()))
+        .any(|h| {
+            h.fields()
+                .iter()
+                .filter(|(k, _)| k.ends_with("profile") || **k == "conformsTo")
+                .any(|(_, v)| {
+                    let values: Vec<&str> = match v {
+                        FieldValue::Text(v) | FieldValue::Resource(v) => vec![v.as_str()],
+                        FieldValue::TextList(vs) | FieldValue::ResourceList(vs) => {
+                            vs.iter().map(String::as_str).collect()
+                        }
+                    };
+                    values.iter().any(|p| {
+                        p.contains("CoreEquipment")
+                            || p.contains("/EquipmentCore")
+                            || p.ends_with("/EQ")
+                    })
+                })
+        })
 }
 
 /// What a file's header says of it: its kind, `cgmes` or `nc`, and who made it.
@@ -257,6 +288,7 @@ impl Session {
                 Ok(dataset) => {
                     let objects = dataset.entries.len();
                     let (kind, maker) = header_of(&dataset);
+                    let equipment = is_equipment(&dataset);
                     self.dataset.merge(dataset);
                     self.texts.add(name, text);
                     self.views = None;
@@ -268,6 +300,7 @@ impl Session {
                         objects,
                         kind,
                         maker,
+                        equipment,
                     }
                 }
                 Err(error) => skipped(name, &error.to_string()),

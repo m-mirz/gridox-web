@@ -395,6 +395,20 @@ export type Guided =
   | { kind: 'contingency'; elements: { element: Linked; equipment: Linked }[] }
   | { kind: 'schedule'; pointClass: string; points: { point: Linked; at: string; enabled: string | null }[] };
 
+/** A boundary point, and how the IGMs meet at it (BDS_UC1). */
+export interface BoundaryPoint {
+  point: Linked;
+  node: Linked | null;
+  /** The IGMs whose equipment files define a terminal on its node. */
+  igms: string[];
+  terminals: number;
+  /** Of them, on no topological node. */
+  onNone: number;
+  topological: { node: Linked; voltage: boolean }[];
+  /** What is amiss; empty when two IGMs meet on one node with a voltage. */
+  amiss: string[];
+}
+
 export interface SarHeader {
   title: string;
   description: string;
@@ -500,6 +514,7 @@ export type Request =
   | ({ kind: 'validate' } & Checks)
   | { kind: 'findings'; rule: string }
   | { kind: 'datasets' }
+  | { kind: 'boundaryPoints' }
   | { kind: 'contingencies' }
   | { kind: 'assessedElements' }
   | { kind: 'remedialActions' }
@@ -554,6 +569,7 @@ export interface Answers {
   validate: FindingsSummary;
   findings: Finding[];
   datasets: Datasets | null;
+  boundaryPoints: BoundaryPoint[] | null;
   contingencies: Contingency[];
   assessedElements: AssessedElement[];
   remedialActions: RemedialAction[];

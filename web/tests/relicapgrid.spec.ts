@@ -319,6 +319,21 @@ const twice = async (page: Page) => (await (await at(page, 'twice')).locator('li
 // BDS_UC1: the boundary merged with every IGM into the CGM. The objects defined by more than one
 // dataset are those the harness records (KNOWN): the boundary's containers and one node, again in
 // Espheim's, Portheim's and Nordheim's EQ, and one region in Nordheim's EQ and the common data.
+test('BDS_UC1: how the IGMs meet at the boundary points', async ({ page }) => {
+  await load(page, CGM);
+  const table = await at(page, 'boundary-points');
+  const row = (name: string) => table.locator('tbody tr').filter({ has: page.getByRole('button', { name, exact: true }) });
+  // As the harness records: Portheim's side not in the CGM's topology, the Espheim–Portheim
+  // border's lines reached from Espheim only, and the HVDC's from its own IGM only.
+  await expect(row('BP Portheim-Espheim')).toContainText('1 topological node, 9 of 11 terminals on none');
+  for (const name of ['Madgar1-Lysaborg1', 'Madgar2-Lysaborg2', 'Madgar3-Lysaborg3']) {
+    await expect(row(name)).toContainText('reached from Espheim only');
+  }
+  await expect(row('Madgar4-Leyva1')).toContainText('reached from Espheim-Svedala only');
+  await expect(table.locator('tbody tr.amiss')).toHaveCount(5);
+  await expect(row('Bouchala-Mastania')).toContainText('Belgovia, Svedala');
+});
+
 test('BDS_UC1: what the boundary and the IGMs define twice', async ({ page }) => {
   await load(page, CGM);
   const panel = await datasets(page);
