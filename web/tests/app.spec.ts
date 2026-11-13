@@ -131,6 +131,14 @@ test('a drop elsewhere on the page reads the files', async ({ page }) => {
   await expect(page.getByTestId('totals')).toContainText('4 objects from 1 file');
 });
 
+test('offers a folder to save edits in place only where the browser can write to one', async ({ page, browserName }) => {
+  const button = page.getByRole('button', { name: 'Open a folder to save edits in place' });
+  if (browserName === 'chromium') await expect(button).toBeVisible();
+  else await expect(button).toBeHidden();
+  // The folder input reads a folder everywhere.
+  await expect(page.getByLabel('Choose a folder')).toBeAttached();
+});
+
 test('says so when a drop holds nothing', async ({ page }) => {
   const transfer = await page.evaluateHandle(() => new DataTransfer());
   await page.locator('header').dispatchEvent('drop', { dataTransfer: transfer });
