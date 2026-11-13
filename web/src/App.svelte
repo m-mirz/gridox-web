@@ -14,7 +14,7 @@
   import SecurityView from './views/SecurityView.svelte';
   import SummaryView from './views/SummaryView.svelte';
   import { WorkerClient } from './worker/client';
-  import type { Checks, EditResult, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
+  import type { Checks, EditResult, EditState, FindingsSummary, PowerFlow, Summary } from './worker/protocol';
   import ModelWorker from './worker/worker?worker';
 
   const client = new WorkerClient(() => new ModelWorker());
@@ -239,6 +239,53 @@
   });
   const NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
 
+  /** The edits made, for the top bar's Undo and count; asked again whenever the model changes. */
+  let editing = $state.raw<EditState | null>(null);
+  $effect(() => {
+    void version;
+    if (!objects) {
+      editing = null;
+      return;
+    }
+    let live = true;
+    client.request<'editState'>({ kind: 'editState' }).then((s) => {
+      if (live) editing = s;
+    });
+    return () => {
+      live = false;
+    };
+  });
+
+  /** The edited files, in the Files sidebar: shown, and opened to them. */
+  function showEdited() {
+    collapsed = false;
+    setTimeout(() => document.querySelector('[data-testid="edited-files"]')?.scrollIntoView({ block: 'nearest' }), 0);
+  }
+
+  /** Keys: 1–6 the views, / the search, Escape closes the inspector, Ctrl or ⌘ with Z undoes. */
+  function key(event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    const typing = !!target?.closest('input, textarea, select, [contenteditable="true"]');
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') {
+      if (typing || !editing?.undo) return;
+      event.preventDefault();
+      void undo();
+      return;
+    }
+    if (typing || event.ctrlKey || event.metaKey || event.altKey || !objects) return;
+    const n = Number(event.key);
+    if (Number.isInteger(n) && n >= 1 && n <= VIEWS.length) {
+      event.preventDefault();
+      go(VIEWS[n - 1].id);
+    } else if (event.key === '/') {
+      event.preventDefault();
+      go('explore');
+      setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid="tree"] input[type="search"]')?.focus(), 0);
+    } else if (event.key === 'Escape') {
+      browse?.close();
+    }
+  }
+
   let label = $derived.by(() => {
     const loaded = summary?.files.filter((f) => f.status === 'loaded') ?? [];
     return loaded.length === 1 ? loaded[0].name : `${loaded.length.toLocaleString('en')} files`;
@@ -258,6 +305,7 @@
 </script>
 
 <svelte:window
+  onkeydown={key}
   ondragstart={() => (dragFromPage = true)}
   ondragend={() => (dragFromPage = false)}
   ondragover={over}
@@ -282,6 +330,12 @@
     {/if}
     <span class="grow"></span>
     {#if objects}
+      {#if editing?.edited.length}
+        <button type="button" class="ghost edited" data-testid="edited-count" title="The files edited, in the Files sidebar" onclick={showEdited}>
+          {editing.edited.length === 1 ? '1 file edited' : `${editing.edited.length} files edited`}
+        </button>
+      {/if}
+      <button type="button" class="ghost" disabled={!editing?.undo} title="Undo the last edit (Ctrl+Z)" onclick={undo}>Undo</button>
       <button type="button" class="status" data-testid="status" onclick={() => go('validation')} title={findings ? findingsText(findings) : ''}>
         {#if checking}
           Validating…
@@ -318,6 +372,10 @@
 
   {#if summary && summary.files.length}
     <div class="body">
+      {#if !collapsed}
+        <!-- On a phone, where the files lie over the view: a tap beside them closes them. -->
+        <button type="button" class="scrim" aria-label="Close the files" tabindex="-1" onclick={() => (collapsed = true)}></button>
+      {/if}
       <FilesPanel
         {client}
         {version}
@@ -338,7 +396,15 @@
         {#if objects}
           <nav class="tabs" aria-label="Views">
             {#each VIEWS as v (v.id)}
-              <a href={`#${v.id}`} aria-current={view === v.id ? 'page' : undefined} onclick={(e) => { e.preventDefault(); go(v.id); }}>{v.label}</a>
+              <a
+                href={`#${v.id}`}
+                title={`${v.label} (${VIEWS.indexOf(v) + 1})`}
+                aria-current={view === v.id ? 'page' : undefined}
+                onclick={(e) => {
+                  e.preventDefault();
+                  go(v.id);
+                }}>{v.label}</a
+              >
             {/each}
           </nav>
           <div class="view explore" hidden={view !== 'explore'}>
@@ -448,6 +514,15 @@
     white-space: nowrap;
   }
 
+  .edited {
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .scrim {
+    display: none;
+  }
+
   .banner {
     margin: 0;
     padding: 0.5rem 1rem;
@@ -541,8 +616,19 @@
       position: relative;
     }
 
-    .top .model {
+    .top .model,
+    .top .edited {
       display: none;
+    }
+
+    .scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      display: block;
+      border: none;
+      border-radius: 0;
+      background: rgba(15, 19, 24, 0.35);
     }
   }
 </style>

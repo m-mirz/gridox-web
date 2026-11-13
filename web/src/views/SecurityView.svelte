@@ -250,14 +250,14 @@
     <div>
       <h2>Security analysis</h2>
       {#if contingencies}
-        <div class="bar">
+        <div class="bar options">
           <label>
             Imbalance taken by
             <select bind:value={sharing} disabled={running}>
               {#each Object.entries(SHARING) as [value, text]}<option {value}>{text}</option>{/each}
             </select>
           </label>
-          <label><input type="checkbox" bind:checked={qLimits} disabled={running} /> Hold reactive limits</label>
+          <label class="check"><input type="checkbox" bind:checked={qLimits} disabled={running} /> Hold reactive limits</label>
           <label>
             Buses from
             <select bind:value={switches} disabled={running || curative}>
@@ -265,7 +265,7 @@
               <option value={true}>the switches</option>
             </select>
           </label>
-          <label title="Each contingency solved again with the remedial actions its ContingencyWithRemedialAction includes, from the switches">
+          <label class="check" title="Each contingency solved again with the remedial actions its ContingencyWithRemedialAction includes, from the switches">
             <input type="checkbox" bind:checked={curative} disabled={running} onchange={() => curative && (switches = true)} /> Curative actions
           </label>
           {#if curative}
@@ -280,7 +280,7 @@
           {#if running}
             <button type="button" onclick={() => (stopping = true)}>Stop</button>
           {:else}
-            <button type="button" onclick={start}>Run {count(contingencies, 'contingency', 'contingencies')}</button>
+            <button type="button" class="primary" onclick={start}>Run {count(contingencies, 'contingency', 'contingencies')}</button>
           {/if}
         </div>
         {#if running && progress}

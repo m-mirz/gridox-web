@@ -706,6 +706,57 @@ ${many}
   });
 });
 
+test.describe('the shell', () => {
+  test.beforeEach(async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV]);
+    await validated(page);
+  });
+
+  test('keys: a number for each view, / to search, Escape to close the inspector', async ({ page }) => {
+    await page.locator('body').press('2');
+    await expect(page.getByRole('link', { name: 'Validation', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL(/#validation$/);
+    await page.locator('body').press('/');
+    await expect(page.getByTestId('tree').getByRole('searchbox')).toBeFocused();
+    await page.getByTestId('tree').getByRole('searchbox').fill('load b');
+    await page.getByTestId('hits').getByRole('button', { name: /^Load B/ }).click();
+    await expect(page.getByTestId('inspector')).toBeVisible();
+    await page.locator('body').press('Escape');
+    await expect(page.getByTestId('inspector')).toBeHidden();
+  });
+
+  test('the top bar says what is edited, and undoes it', async ({ page }) => {
+    const undo = page.getByRole('banner').getByRole('button', { name: 'Undo' });
+    await expect(undo).toBeDisabled();
+    await page.getByTestId('tree').getByRole('searchbox').fill('load b');
+    await page.getByTestId('hits').getByRole('button', { name: /^Load B/ }).click();
+    const edit = page.getByTestId('details').getByTestId('edit');
+    await edit.getByText('Edit', { exact: true }).click();
+    await edit.getByLabel('Value of EnergyConsumer.p').fill('80');
+    await edit.locator('.row', { hasText: 'EnergyConsumer.p' }).getByRole('button', { name: 'Set' }).click();
+    await expect(page.getByTestId('edited-count')).toHaveText('1 file edited');
+    await expect(undo).toBeEnabled();
+    // Ctrl+Z, away from any field.
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(page.getByTestId('edited-count')).toBeHidden();
+    await expect(undo).toBeDisabled();
+  });
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the files lie over the view, closed at first, and a tap beside them closes them', async ({ page }) => {
+    await input(page).setInputFiles([GRID, STATE, SV]);
+    await expect(page.getByRole('button', { name: 'Show the files' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show the files' }).click();
+    await expect(page.getByTestId('totals')).toBeVisible();
+    await page.getByRole('button', { name: 'Close the files' }).click({ position: { x: 370, y: 400 } });
+    await expect(page.getByTestId('totals')).toBeHidden();
+  });
+});
+
 test.describe('editing', () => {
   const details = (page: Page) => page.getByTestId('details');
   const open = async (page: Page, name: RegExp, hit = name) => {
