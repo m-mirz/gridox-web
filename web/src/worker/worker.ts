@@ -4,6 +4,7 @@
 import init, { Session } from '../wasm/gridox_wasm';
 import type { Envelope, FileOutcome, Reply, Request } from './protocol';
 import { forget, keep, kept, remove, replace } from './store';
+import { unzipped } from '../zip';
 
 let session: Session;
 const ready = init().then(() => {
@@ -67,7 +68,10 @@ async function handle(request: Request): Promise<string> {
   await ready;
   switch (request.kind) {
     case 'load': {
-      const added = await add(request.files);
+      // A zip's XML files in its place: they, not the archive, are what is kept.
+      const { files: opened, failed } = await unzipped(request.files);
+      for (const { name, reason } of failed) session.skipFile(name, reason);
+      const added = await add(opened);
       files.push(...added);
       if (added.length) keeping = await keep(added);
       return loaded();

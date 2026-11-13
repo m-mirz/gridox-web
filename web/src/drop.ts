@@ -13,13 +13,13 @@ async function entriesOf(directory: FileSystemDirectoryEntry): Promise<FileSyste
 
 const fileOf = (entry: FileSystemFileEntry) => new Promise<File>((resolve, reject) => entry.file(resolve, reject));
 
-/** A folder's XML files, in its subfolders too, by path. A model's folder also holds what is not one. */
+/** A folder's XML files and zip archives, in its subfolders too, by path. A model's folder also holds what is not one. */
 async function xmlIn(directory: FileSystemDirectoryEntry): Promise<File[]> {
   const found: { path: string; file: File }[] = [];
   const walk = async (folder: FileSystemDirectoryEntry) => {
     for (const entry of await entriesOf(folder)) {
       if (entry.isDirectory) await walk(entry as FileSystemDirectoryEntry);
-      else if (entry.name.toLowerCase().endsWith('.xml')) {
+      else if (/\.(xml|zip)$/i.test(entry.name)) {
         found.push({ path: entry.fullPath, file: await fileOf(entry as FileSystemFileEntry) });
       }
     }
