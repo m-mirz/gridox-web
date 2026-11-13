@@ -74,6 +74,7 @@
       {#if elapsed !== null}<span class="sub" data-testid="elapsed">{Math.round(elapsed).toLocaleString('en')} ms</span>{/if}
     </div>
     {#if kept}<p class="sub small" data-testid="kept">Kept in this browser, on this machine, until you clear them.</p>{/if}
+    <p class="sub small"><a href="./third-party-licenses.txt" target="_blank" rel="noopener">Licences</a> of the software in gridox</p>
   </aside>
 {/if}
 
