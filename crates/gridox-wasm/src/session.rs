@@ -1,7 +1,7 @@
 //! The model set a worker holds: what the page has loaded, decoded and merged. It stays here, and
 //! the page asks for what it draws, as a whole dataset would be too much to pass across.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use cimmodel::CimDataset;
 use cimmodel::base::{AttrKind, FieldValue};
@@ -88,6 +88,27 @@ struct FileFacts {
     /// Objects of the CGMES and NC tables, and of classes outside them.
     objects: usize,
     foreign: usize,
+    /// Its references to objects it does not define itself, by UUID: (object, field, target as
+    /// written). Whether another file defines them is asked of the merged model.
+    outward: Vec<(String, &'static str, String)>,
+}
+
+/// `id` as a bare UUID, lower case, if it is one: `_`, `#`, `urn:uuid:` left off.
+fn bare_uuid(id: &str) -> Option<String> {
+    let id = cimview::mrid_of(id);
+    let id = id
+        .strip_prefix("urn:uuid:")
+        .unwrap_or(id)
+        .trim_start_matches('_')
+        .to_ascii_lowercase();
+    let parts: Vec<&str> = id.split('-').collect();
+    let shape = [8, 4, 4, 4, 12];
+    (parts.len() == 5
+        && parts
+            .iter()
+            .zip(shape)
+            .all(|(p, n)| p.len() == n && p.bytes().all(|b| b.is_ascii_hexdigit())))
+    .then_some(id)
 }
 
 /// The loaded files as validated, and what was found.
@@ -243,11 +264,43 @@ impl Session {
                     .push(index);
             }
         }
+        // An association (`Class.Upper`), as cimoxide's harness counts them, to a UUID this file
+        // does not define.
+        let own: HashSet<String> = dataset
+            .entries
+            .keys()
+            .chain(dataset.foreign.keys())
+            .filter_map(|k| bare_uuid(k))
+            .collect();
+        let mut outward = Vec::new();
+        for (id, element) in &dataset.entries {
+            for (&key, value) in element.fields() {
+                if !key
+                    .rsplit('.')
+                    .next()
+                    .is_some_and(|a| a.starts_with(|c: char| c.is_ascii_uppercase()))
+                {
+                    continue;
+                }
+                let targets: &[String] = match value {
+                    FieldValue::Resource(v) => std::slice::from_ref(v),
+                    FieldValue::ResourceList(vs) => vs,
+                    _ => &[],
+                };
+                for target in targets {
+                    if bare_uuid(target).is_some_and(|t| !own.contains(&t)) {
+                        outward.push((id.clone(), key, target.clone()));
+                    }
+                }
+            }
+        }
+        outward.sort();
         self.gathering.files.push(FileFacts {
             name: name.to_string(),
             header,
             objects: dataset.entries.len(),
             foreign: dataset.foreign.len(),
+            outward,
         });
         self.checking.push((name.to_string(), dataset));
         Ok(())
@@ -522,7 +575,29 @@ impl Session {
                 .or_else(|| self.dataset.foreign.get(id))?;
             Some(element.local_name())
         };
+        // What the merged model defines, by bare UUID: a reference to anything else leads nowhere.
+        let known: HashSet<String> = self
+            .dataset
+            .entries
+            .keys()
+            .chain(self.dataset.foreign.keys())
+            .filter_map(|k| bare_uuid(k))
+            .collect();
+        let mut unresolved_total = 0;
         let files = facts.files.iter().map(|file| {
+            let nowhere: Vec<&(String, &str, String)> = file
+                .outward
+                .iter()
+                .filter(|(_, _, t)| bare_uuid(t).is_some_and(|t| !known.contains(&t)))
+                .collect();
+            unresolved_total += nowhere.len();
+            let unresolved = json!({
+                "count": nowhere.len(),
+                "references": nowhere.iter().take(DATASET_LIMIT).map(|(id, key, target)| json!({
+                    "id": id, "label": label(id), "class": class(id), "key": key,
+                    "target": cimview::mrid_of(target),
+                })).collect::<Vec<_>>(),
+            });
             let header = file.header.as_deref().and_then(|id| {
                 let element = self.dataset.entries.get(id).or_else(|| self.dataset.foreign.get(id))?;
                 let mut refs: Vec<(&str, Vec<Value>)> = Vec::new();
@@ -547,8 +622,9 @@ impl Session {
                     "refs": refs.into_iter().map(|(key, values)| json!({ "key": key, "values": values })).collect::<Vec<_>>(),
                 }))
             });
-            json!({ "name": file.name, "objects": file.objects, "foreign": file.foreign, "header": header })
+            json!({ "name": file.name, "objects": file.objects, "foreign": file.foreign, "header": header, "unresolved": unresolved })
         });
+        let files: Vec<Value> = files.collect();
         let twice: Vec<(&String, &Vec<u16>)> = facts
             .defined_in
             .iter()
@@ -567,7 +643,8 @@ impl Session {
             .take(DATASET_LIMIT)
             .map(|(id, types)| json!({ "id": id, "label": label(id), "types": types }));
         json!({
-            "files": files.collect::<Vec<_>>(),
+            "files": files,
+            "unresolved": unresolved_total,
             "twice": { "count": twice.len(), "objects": twice_listed.collect::<Vec<_>>() },
             "conflicts": { "count": conflicts.len(), "objects": conflicts_listed.collect::<Vec<_>>() },
         })
@@ -2242,6 +2319,56 @@ mod tests {
                 return session;
             }
         }
+    }
+
+    #[test]
+    fn a_reference_to_what_no_file_defines_is_counted_on_its_file() {
+        // The contingency file alone: its equipment, in the grid's EQ, is not loaded.
+        let mut session = Session::new();
+        session.add_file("nc_CO_AE.xml", NC);
+        session.check_file("nc_CO_AE.xml", NC).unwrap();
+        session.validate(Checks::default());
+        let found = session.datasets();
+        let file = &found["files"][0];
+        let targets: Vec<&str> = file["unresolved"]["references"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["target"].as_str().unwrap())
+            .collect();
+        assert!(
+            targets.contains(&"_00000000-0000-4000-8000-000000000a32"),
+            "{targets:?}"
+        );
+        assert_eq!(found["unresolved"], file["unresolved"]["count"]);
+        // With the grid, it resolves; a reference inside the file never counts.
+        let mut session = Session::new();
+        for (name, text) in [("grid_EQ.xml", GRID), ("nc_CO_AE.xml", NC)] {
+            session.add_file(name, text);
+            session.check_file(name, text).unwrap();
+        }
+        session.validate(Checks::default());
+        let found = session.datasets();
+        let co = found["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "nc_CO_AE.xml")
+            .unwrap();
+        assert!(
+            co["unresolved"]["references"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["target"] != "_00000000-0000-4000-8000-000000000a32")
+        );
+        assert!(
+            co["unresolved"]["references"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["target"] != "_00000000-0000-4000-8000-000000000c01")
+        );
     }
 
     fn random() -> Vec<u8> {
