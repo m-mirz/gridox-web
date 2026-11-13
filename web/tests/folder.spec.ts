@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { at, validated, view } from './views';
 
 const fixture = (name: string) => join(import.meta.dirname, 'fixtures', name);
 const FILES = ['grid_EQ.xml', 'grid_state.xml', 'grid_SV.xml'];
@@ -59,14 +60,14 @@ test.beforeEach(async ({ page, browserName }) => {
   await page.getByRole('button', { name: 'Open a folder to save edits in place' }).click();
   await expect(page.getByTestId('totals')).toContainText('from 3 files');
   await expect(page.getByTestId('folder')).toContainText('3 files of the model from this folder');
-  await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+  await validated(page, 30_000);
 });
 
 /** Sets Load B's active power to `p`, through its Edit panel. */
 async function setLoad(page: Page, p: string) {
-  await page.getByTestId('tree').getByRole('searchbox').fill('load b');
-  await page.getByTestId('hits').getByRole('button', { name: /^Load B/ }).click();
-  const edit = page.getByTestId('details').getByTestId('edit');
+  await (await at(page, 'tree')).getByRole('searchbox').fill('load b');
+  await (await at(page, 'hits')).getByRole('button', { name: /^Load B/ }).click();
+  const edit = (await at(page, 'details')).getByTestId('edit');
   if ((await edit.getAttribute('open')) === null) await edit.getByText('Edit', { exact: true }).click();
   await edit.getByLabel('Value of EnergyConsumer.p').fill(p);
   await edit.locator('.row', { hasText: 'EnergyConsumer.p' }).getByRole('button', { name: 'Set' }).click();
@@ -126,7 +127,7 @@ test('the folder is remembered: after a reload, an edit kept in the browser is s
   await page.reload();
   const bar = page.getByTestId('folder');
   await expect(bar).toContainText('a-model');
-  await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+  await validated(page, 30_000);
   // The edit came back with the kept files, though its history did not: the folder is compared.
   await bar.getByRole('button', { name: 'Save in place…' }).click();
   await expect(bar.getByTestId('folder-plan')).toHaveText('grid_state.xml: overwritten');
@@ -140,13 +141,14 @@ test('a file an edit creates goes into the folder, unless the folder has its nam
   await writeOnDisk(page, 'nc_RA.xml', readFileSync(fixture('nc_RA.xml'), 'utf8'));
   await writeOnDisk(page, 'nc_RAS.xml', readFileSync(fixture('nc_RAS.xml'), 'utf8'));
   await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
   await page.getByRole('button', { name: 'Open a folder to save edits in place' }).click();
   await expect(page.getByTestId('totals')).toContainText('from 5 files');
-  await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+  await validated(page, 30_000);
   // RA_UC4's counter-proposal, a file of its own.
-  await page.getByTestId('tree').getByRole('searchbox').fill('open a, proposed');
-  await page.getByTestId('hits').getByRole('button', { name: /^Open A, proposed/ }).click();
-  const edit = page.getByTestId('details').getByTestId('edit');
+  await (await at(page, 'tree')).getByRole('searchbox').fill('open a, proposed');
+  await (await at(page, 'hits')).getByRole('button', { name: /^Open A, proposed/ }).click();
+  const edit = (await at(page, 'details')).getByTestId('edit');
   if ((await edit.getAttribute('open')) === null) await edit.getByText('Edit', { exact: true }).click();
   await edit.getByRole('button', { name: 'Counter-propose' }).click();
   await expect(page.getByTestId('edited-files')).not.toContainText('validating', { timeout: 30_000 });
@@ -196,5 +198,6 @@ test('forgetting the folder, or clearing the model, writes nothing more', async 
   await page.getByRole('button', { name: 'Open a folder to save edits in place' }).click();
   await expect(page.getByTestId('folder')).toBeVisible();
   await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
   await expect(page.getByTestId('folder')).toBeHidden();
 });

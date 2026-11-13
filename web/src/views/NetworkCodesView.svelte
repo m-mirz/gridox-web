@@ -119,8 +119,8 @@
 
 {#if contingencies.length || assessed.length || actions.length || schedules.groups.length}
   <section aria-label="Network codes" data-testid="network-codes">
-    <details open>
-      <summary><h2>Network codes</h2></summary>
+    <div>
+      <h2>Network codes</h2>
       <div class="bar" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'contingencies'} onclick={() => (tab = 'contingencies')}>
           Contingencies <span class="sub">{contingencies.length.toLocaleString('en')}</span>
@@ -297,22 +297,18 @@
         {/if}
       </div>
       <p class="sub">{count(shown, 'row')} shown.{#if tab === 'actions'}{' '}Applied: what each alteration sets, from its intensity schedule at the scenario time, else its range; nothing is solved here.{/if}</p>
-    </details>
+    </div>
   </section>
+{:else}
+  <p class="sub" data-testid="no-network-codes">No Network Code data is loaded: contingencies, assessed elements, remedial actions or their schedules.</p>
 {/if}
 
 <style>
   section {
-    margin-top: 1rem;
+    margin: 0;
   }
 
-  summary {
-    cursor: pointer;
-  }
 
-  summary h2 {
-    display: inline;
-  }
 
   .bar {
     display: flex;

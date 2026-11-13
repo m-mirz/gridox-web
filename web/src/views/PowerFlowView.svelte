@@ -146,8 +146,8 @@
 </script>
 
 <section aria-label="Power flow" data-testid="power-flow">
-  <details open>
-    <summary><h2>Power flow</h2></summary>
+  <div>
+    <h2>Power flow</h2>
     <div class="bar">
       <label>
         Imbalance taken by
@@ -300,21 +300,15 @@
     {:else}
       <p class="sub">Solves the loaded model as it stands: its EQ, SSH and TP, with the SV to compare with. Nothing leaves this browser.</p>
     {/if}
-  </details>
+  </div>
 </section>
 
 <style>
   section {
-    margin-top: 1rem;
+    margin: 0;
   }
 
-  summary {
-    cursor: pointer;
-  }
 
-  summary h2 {
-    display: inline;
-  }
 
   h3 {
     margin: 1rem 0 0.25rem;
