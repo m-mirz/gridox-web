@@ -266,9 +266,7 @@ impl Session {
             &[refused.to_string()],
         );
         let points = referring("nc:EventTimePoint", "EventTimePoint.EventSchedule", &events);
-        let mut draws = random
-            .chunks_exact(16)
-            .map(|c| <[u8; 16]>::try_from(c).expect("16"));
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
         let mut exhausted = false;
         let mut next = || {
             draws.next().unwrap_or_else(|| {
@@ -486,9 +484,7 @@ impl Session {
     ) -> Value {
         self.views();
         self.build_texts();
-        let mut draws = random
-            .chunks_exact(16)
-            .map(|c| <[u8; 16]>::try_from(c).expect("16"));
+        let mut draws = random.as_chunks::<16>().0.iter().copied();
         let mut exhausted = false;
         let mut next = || {
             draws.next().unwrap_or_else(|| {
