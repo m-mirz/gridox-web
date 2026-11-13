@@ -40,18 +40,10 @@ function flowBands() {
 }
 
 export function stylesheet(): cytoscape.StylesheetJson {
-  const sev = {
-    violation: colour("--violation", "#f14c4c"),
-    warning: colour("--warning", "#cca700"),
-    info: colour("--info", "#3794ff"),
-    none: colour("--muted", "#888888"),
-  };
   const fg = colour("--fg", "#cccccc");
   const bg = colour("--bg", "#1e1e1e");
   const fill = colour("--muted", "#8b8b8b");
   const focus = colour("--focus", "#007fd4");
-  const bySeverity = (prop: string) =>
-    Object.entries(sev).map(([k, c]) => ({ selector: `[sev = "${k}"]`, style: { [prop]: c } }));
   // Each voltage band's colour, on what `prop` paints of `selector`.
   const byBand = (selector: string, ...props: string[]) =>
     BANDS.map(([b, , v, fb]) => ({
@@ -88,7 +80,7 @@ export function stylesheet(): cytoscape.StylesheetJson {
     ...byBand('node[kind = "junction"]', "background-color"),
     ...byBand('node[kind = "busbar"]', "background-color"),
     // Equipment: its symbol, in its voltage's colour, on a transparent disc
-    // (which carries the findings' ring, and the selection).
+    // (which carries the selection). Findings are the tree's to show, not the grid's.
     {
       selector: 'node[kind = "symbol"]',
       style: {
@@ -102,12 +94,6 @@ export function stylesheet(): cytoscape.StylesheetJson {
       },
     },
     { selector: 'node[symbol ^= "transformer"]', style: { width: 18, height: 18 } },
-    ...bySeverity("border-color").map((s) => ({ ...s, selector: `node[kind != "group"]${s.selector}` })),
-    // And a halo, which reads apart from a voltage colour of the same hue.
-    ...bySeverity("underlay-color").filter((s) => !s.selector.includes('"none"')).map((s) => ({
-      ...s, selector: `node[kind != "group"]${s.selector}`,
-      style: { ...s.style, "underlay-opacity": 0.35, "underlay-padding": 4, "underlay-shape": "ellipse" },
-    })),
 
     { selector: "node.out", style: { opacity: 0.45, "border-style": "dashed" } },
     {
@@ -115,9 +101,6 @@ export function stylesheet(): cytoscape.StylesheetJson {
       style: { width: "data(width)", "curve-style": "bezier", "line-color": fill, opacity: 0.9 },
     },
     ...byBand("edge", "line-color"),
-    // Findings on a line: a halo in the worst one's colour, apart from its voltage colour.
-    ...bySeverity("underlay-color").filter((s) => !s.selector.includes('"none"'))
-      .map((s) => ({ ...s, selector: `edge${s.selector}`, style: { ...s.style, "underlay-opacity": 0.4, "underlay-padding": 5 } })),
     { selector: "edge.disconnected", style: { "line-style": "dashed" } },
     // What a table row is about: in the focus colour, around and along it.
     { selector: "node.highlighted", style: { "border-color": focus, "border-width": 4 } },
@@ -128,7 +111,7 @@ export function stylesheet(): cytoscape.StylesheetJson {
     { selector: "edge:selected", style: { "line-color": focus, opacity: 1 } },
     // A power flow, when the grid is coloured by it: voltages on nodes, loadings on lines and equipment.
     ...flowBands(),
-    // Faded, findings' halos too, which do not take the element's opacity.
+    // Faded.
     { selector: ".dim", style: { opacity: 0.15, "underlay-opacity": 0 } },
   ] as cytoscape.StylesheetJson;
 }

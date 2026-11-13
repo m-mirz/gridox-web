@@ -247,8 +247,8 @@
 
 {#if contingencies || supplied.length}
   <section aria-label="Security analysis" data-testid="security">
-    <details open>
-      <summary><h2>Security analysis</h2></summary>
+    <div>
+      <h2>Security analysis</h2>
       {#if contingencies}
         <div class="bar">
           <label>
@@ -470,22 +470,21 @@
           <p class="sub">It requires the CO datasets: {analysis.requires.join(', ')}.</p>
         </details>
       {/if}
-    </details>
+    </div>
   </section>
+{:else}
+  <p class="sub" data-testid="no-contingencies">No contingencies are loaded: add a CO file to run a security analysis, or a SAR to read one.</p>
 {/if}
 
 <style>
   section {
-    margin-top: 1rem;
+    margin: 0;
   }
 
   summary {
     cursor: pointer;
   }
 
-  summary h2 {
-    display: inline;
-  }
 
   .bar {
     display: flex;

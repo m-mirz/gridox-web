@@ -26,17 +26,12 @@
   let {
     client,
     version,
-    findingsVersion,
-    validated,
     flow = null,
     onselect,
   }: {
     client: WorkerClient;
     /** Changes when the model does. */
     version: number;
-    /** Changes when the findings do. */
-    findingsVersion: number;
-    validated: boolean;
     /** A power flow of the model, to colour the grid by. */
     flow?: FlowOverlay | null;
     /** What is selected here, with the object it stands for; `null` when nothing is. */
@@ -55,8 +50,6 @@
   let highlighting = $state(false);
   /** Counts the grids loaded to be drawn anew, as a refresh of the findings is not. */
   let loaded = $state(0);
-  /** Whether the grid shown has the findings: until it is asked again, it says nothing of them. */
-  let withFindings = $state(false);
   /** What the scene is coloured by, once there is a power flow. */
   let colourBy = $state<'voltage' | 'flow'>('voltage');
 
@@ -362,7 +355,6 @@
       busy = true;
       failed = null;
       inside = null;
-      withFindings = false;
       try {
         grid = await client.request<'grid'>({ kind: 'grid' });
       } catch (error) {
@@ -371,32 +363,6 @@
       }
       busy = false;
       loaded += 1;
-    });
-  });
-
-  // New findings: the same scene, its colours and rings redone, its layout and selection kept.
-  $effect(() => {
-    if (!findingsVersion) return;
-    untrack(async () => {
-      const fresh = await client.request<'grid'>({ kind: 'grid' });
-      const within = inside ? await client.request<'inside'>({ kind: 'inside', id: inside.id }) : null;
-      grid = fresh;
-      if (inside) inside = within;
-      withFindings = true;
-      if (!cy) return;
-      const elements = inside ? insideElements(inside) : gridElements(fresh);
-      const same = elements.length === cy.elements().length && elements.every((el) => cy?.getElementById(el.data.id as string).nonempty());
-      if (!same) {
-        draw();
-        return;
-      }
-      for (const el of elements) {
-        const at = cy.getElementById(el.data.id as string);
-        at.removeData('base');
-        at.data(el.data);
-        if (typeof el.classes === 'string') at.classes(el.classes);
-      }
-      paint();
     });
   });
 
@@ -419,6 +385,36 @@
   const scheme = window.matchMedia('(prefers-color-scheme: dark)');
   const restyle = () => cy?.style(stylesheet());
   scheme.addEventListener('change', restyle);
+
+  // Shown again after another view, or resized: the drawing follows its box, and is fitted to it
+  // when it had none.
+  $effect(() => {
+    const box = container;
+    if (!box) return;
+    let empty = box.clientWidth === 0;
+    const watch = new ResizeObserver(() => {
+      if (!cy) return;
+      cy.resize();
+      const now = box.clientWidth === 0;
+      if (empty && !now) cy.fit(undefined, 24);
+      empty = now;
+    });
+    watch.observe(box);
+    return () => watch.disconnect();
+  });
+
+  // A theme chosen or the system's changed: the colours drawn are read again.
+  $effect(() => {
+    const restyle = () => cy?.style(stylesheet());
+    const theme = new MutationObserver(restyle);
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const scheme = matchMedia('(prefers-color-scheme: dark)');
+    scheme.addEventListener('change', restyle);
+    return () => {
+      theme.disconnect();
+      scheme.removeEventListener('change', restyle);
+    };
+  });
 
   onDestroy(() => {
     scheme.removeEventListener('change', restyle);
@@ -458,7 +454,7 @@
       <input type="search" aria-label={inside ? 'Find equipment' : 'Find a substation'} placeholder={inside ? 'Find equipment' : 'Find a substation'} bind:value={query} oninput={find} />
     {/if}
     <span data-testid="grid-summary">
-      {#if busy}Laying out the grid…{:else if inside}{insideSummary(inside, validated && withFindings)}{:else if grid?.nodes.length}{gridSummary(grid, validated && withFindings)}{/if}
+      {#if busy}Laying out the grid…{:else if inside}{insideSummary(inside)}{:else if grid?.nodes.length}{gridSummary(grid)}{/if}
     </span>
   </div>
   {#if failed}

@@ -39,15 +39,15 @@
 
 {#if datasets}
   <section aria-label="Datasets" data-testid="datasets">
-    <details>
-      <summary>
+    <div>
+      <div class="head">
         <h2>Datasets</h2>
         <span data-testid="datasets-summary">
           {count(datasets.files.length, 'file')} · {count(datasets.twice.count, 'object')} defined more than once ·
           {count(datasets.conflicts.count, 'object')} typed with unrelated classes · {count(unresolved(datasets), 'header reference')} not loaded ·
           {count(datasets.unresolved, 'reference')} to objects not loaded
         </span>
-      </summary>
+      </div>
 
       {#if datasets.twice.count}
         <h3>Defined more than once</h3>
@@ -123,13 +123,25 @@
           </li>
         {/each}
       </ul>
-    </details>
+    </div>
   </section>
 {/if}
 
 <style>
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    overflow-wrap: anywhere;
+  }
+
+  .head h2 {
+    margin: 0;
+  }
+
   section {
-    margin-top: 1rem;
+    margin: 0;
   }
 
   summary {
@@ -137,10 +149,6 @@
     overflow-wrap: anywhere;
   }
 
-  summary h2 {
-    display: inline;
-    margin-right: 0.75rem;
-  }
 
   h3 {
     margin: 0.75rem 0 0.25rem;

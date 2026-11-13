@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_GRID, ALL_NC, AREAS, BOUNDARY, CGM, CO, COMMON, EVERYTHING, PRESENT, REFERENCE, SUPPLIED_SAR, area, withBoundary } from './relicapgrid/files';
+import { at, validated, view } from './views';
 
 /** cimoxide's CLI, to validate what the app writes: `$CIMCLI`, else a release build beside this checkout. */
 const CIMCLI = process.env.CIMCLI ?? join(import.meta.dirname, '../../../cimoxide/target/release/cimcli');
@@ -30,19 +31,19 @@ async function load(page: Page, files: string[]) {
 
 /** Shows the object `mrid` (with its `_`), found by the tree's search; its Edit panel, opened. */
 async function show(page: Page, mrid: string) {
-  await page.getByTestId('tree').getByRole('searchbox').fill(mrid);
-  await page.getByTestId('hits').getByRole('button').first().click();
-  const details = page.getByTestId('details');
+  await (await at(page, 'tree')).getByRole('searchbox').fill(mrid);
+  await (await at(page, 'hits')).getByRole('button').first().click();
+  const details = (await at(page, 'details'));
   await expect(details).toContainText(mrid);
   return details;
 }
 
 async function solve(page: Page, qLimits = true) {
-  const pf = page.getByTestId('power-flow');
+  const pf = (await at(page, 'power-flow'));
   const box = pf.getByLabel('Hold reactive limits');
   if ((await box.isChecked()) !== qLimits) await box.click();
   await pf.getByRole('button', { name: /^Solve/ }).click();
-  await expect(page.getByTestId('pf-verdict')).toBeVisible({ timeout: 200_000 });
+  await expect((await at(page, 'pf-verdict'))).toBeVisible({ timeout: 200_000 });
   return pf;
 }
 
@@ -68,15 +69,15 @@ for (const a of AREAS) {
   test(`PF_UC1 ${a}: solved and set against its SV`, async ({ page }) => {
     await load(page, area(a));
     await solve(page);
-    await expect(page.getByTestId('pf-verdict')).toHaveText(PF[a].verdict);
-    await expect(page.getByTestId('pf-components')).toContainText(PF[a].sv);
+    await expect((await at(page, 'pf-verdict'))).toHaveText(PF[a].verdict);
+    await expect((await at(page, 'pf-components'))).toContainText(PF[a].sv);
   });
 }
 
 test('PF_UC1 Espheim converges without reactive limits', async ({ page }) => {
   await load(page, area('Espheim'));
   await solve(page, false);
-  await expect(page.getByTestId('pf-verdict')).not.toContainText('did not converge');
+  await expect((await at(page, 'pf-verdict'))).not.toContainText('did not converge');
 });
 
 // CO_UC1: the twelve contingencies the docs name, each with its equipment of the class they say
@@ -114,7 +115,7 @@ test('CO_UC1: the contingencies name their equipment, and one becomes an N-2', a
 
 /** The Network codes panel on `tab`. */
 async function codes(page: Page, tab: RegExp) {
-  const panel = page.getByTestId('network-codes');
+  const panel = (await at(page, 'network-codes'));
   await panel.getByRole('tab', { name: tab }).click();
   return panel;
 }
@@ -128,10 +129,10 @@ test('RA_UC1: the action on its switch, which it leaves closed', async ({ page }
   await expect(row).toContainText('Topology RA one Switch on RT133_RL8-B-S');
   await expect(row).toContainText('Switch.open = 0.0 (absolute)');
   await expect(row.getByTestId('applied')).toContainText('RT133_RL8-B-S stays closed');
-  const pf = page.getByTestId('power-flow');
+  const pf = (await at(page, 'power-flow'));
   await pf.getByLabel('Remedial action applied').selectOption({ label: 'Topology RA one Switch' });
   await solve(page);
-  await expect(page.getByTestId('pf-applied')).toContainText('RT133_RL8-B-S closed → closed.');
+  await expect((await at(page, 'pf-applied'))).toContainText('RT133_RL8-B-S closed → closed.');
 });
 
 // RA_UC2: two remedial actions excluding one another, each opening four switches. The docs put
@@ -146,12 +147,13 @@ test('RA_UC2: two exclusive actions, each applied to the grid', async ({ page })
     ['RA SubstationA_quarterbar1B', 'RA SubstationB_2N'],
     ['RA SubstationB_2N', 'RA SubstationA_quarterbar1B'],
   ]) {
+    await view(page, 'Network codes');
     const row = table.getByRole('row', { name: new RegExp(`^${name} `) });
     await expect(row).toContainText(`exclusive in GroupSubstationA with ${other}`);
     await expect(row.getByTestId('applied')).toContainText('closed → open');
-    await page.getByTestId('power-flow').getByLabel('Remedial action applied').selectOption({ label: name });
+    await (await at(page, 'power-flow')).getByLabel('Remedial action applied').selectOption({ label: name });
     await solve(page);
-    const applied = page.getByTestId('pf-applied');
+    const applied = (await at(page, 'pf-applied'));
     await expect(applied).toContainText(`With ${name} applied:`);
     expect((await applied.innerText()).match(/closed → open/g)).toHaveLength(4);
     changes.push(await applied.innerText());
@@ -191,7 +193,7 @@ test('RA_UC4: a refused schedule and its counter-proposal', async ({ page }) => 
   await expect(edit0.getByLabel('Field to add').locator('option', { hasText: 'RemedialActionScheduleDependency.kind' })).toHaveCount(1);
   // Its proposal, the first schedule it names.
   await dependency.getByRole('button', { name: 'TP RA One Switch' }).first().click();
-  await expect(page.getByTestId('details')).toContainText('_51361821-0a40-4e5a-a49d-29c266ea2ecc');
+  await expect((await at(page, 'details'))).toContainText('_51361821-0a40-4e5a-a49d-29c266ea2ecc');
   const refused = await show(page, '_17527637-6099-4ee6-8b21-fea8dfec4c75');
   const edit = refused.getByTestId('edit');
   if ((await edit.getAttribute('open')) === null) await edit.getByText('Edit', { exact: true }).click();
@@ -223,9 +225,9 @@ test('SAR_UC1: the analysis, the supplied SAR beside it, and a SAR cimoxide vali
   test.setTimeout(600_000);
   const files = [...CGM, ...CO, SUPPLIED_SAR];
   await load(page, files);
-  const sa = page.getByTestId('security');
+  const sa = (await at(page, 'security'));
   await sa.getByRole('button', { name: /^Run \d/ }).click();
-  const summary = page.getByTestId('sa-summary');
+  const summary = (await at(page, 'sa-summary'));
   await expect(summary).toBeVisible({ timeout: 500_000 });
   // As gridoxide's tests pin, by capability.
   await expect(summary).toHaveText(
@@ -233,12 +235,12 @@ test('SAR_UC1: the analysis, the supplied SAR beside it, and a SAR cimoxide vali
   );
   // The supplied SAR's one violation, on TieLine_SD_BO3 after CO2, is none in this analysis.
   await sa.getByRole('tab', { name: /Supplied SAR/ }).click();
-  const supplied = page.getByTestId('sa-supplied');
+  const supplied = (await at(page, 'sa-supplied'));
   await expect(supplied.locator('tbody tr')).toHaveCount(2);
   await expect(supplied.getByRole('row', { name: /CO2/ })).toContainText('TieLine_SD_BO3');
   await expect(supplied.getByRole('row', { name: /CO2/ })).toContainText('no violation');
 
-  const form = page.getByTestId('sa-download');
+  const form = (await at(page, 'sa-download'));
   await form.getByText('Download the SAR').click();
   for (const [label, value] of [
     [/Publisher/, 'https://energy.referencedata.eu/Party/RCC-Jotunheim'],
@@ -273,13 +275,13 @@ test('SAR_UC1: the analysis, the supplied SAR beside it, and a SAR cimoxide vali
 
 /** The Datasets panel, open. */
 async function datasets(page: Page) {
-  const panel = page.getByTestId('datasets');
+  const panel = (await at(page, 'datasets'));
   await panel.locator('summary').first().click();
   return panel;
 }
 
 /** Each object defined more than once: its label, class and files, as the page writes them. */
-const twice = async (page: Page) => (await page.getByTestId('twice').locator('li').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+const twice = async (page: Page) => (await (await at(page, 'twice')).locator('li').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
 
 // BDS_UC1: the boundary merged with every IGM into the CGM. The objects defined by more than one
 // dataset are those the harness records (KNOWN): the boundary's containers and one node, again in
@@ -307,7 +309,7 @@ test('BDS_UC1: what the boundary and the IGMs define twice', async ({ page }) =>
 // its GeographicalRegion.
 test('CD_UC1: the common data, and what other datasets define again', async ({ page }) => {
   await load(page, EVERYTHING);
-  const classes = page.getByTestId('classes');
+  const classes = (await at(page, 'classes'));
   for (const c of [
     'BiddingZone', 'BiddingZoneBorder', 'CapacityCalculationRegion', 'CoordinatedCapacityCalculator', 'Organisation',
     'TransmissionSystemOperator', 'SecurityCoordinator', 'LoadFrequencyControlArea', 'SynchronousArea', 'SchedulingArea',
@@ -333,7 +335,7 @@ test('CD_UC1: the common data, and what other datasets define again', async ({ p
 test('RD_UC1: which header references the reference data defines', async ({ page }) => {
   await load(page, REFERENCE);
   await datasets(page);
-  const counts = await page.getByTestId('dataset-files').evaluate((ul) => {
+  const counts = await (await at(page, 'dataset-files')).evaluate((ul) => {
     const out: Record<string, { missing: number; all: number }> = {};
     for (const dl of ul.querySelectorAll('dl')) {
       const kids = [...dl.children];
@@ -380,7 +382,7 @@ for (const a of ['Belgovia', 'Britheim', 'Espheim', 'Galia', 'Svedala']) {
 test('OR_UC1: the designations resolve', async ({ page }) => {
   await load(page, area('Espheim'));
   for (const c of ['Designation', 'DesignationType', 'DesignationAuthority']) {
-    await expect(page.getByTestId('classes').locator('td', { hasText: new RegExp(`^(nc:)?${c}$`) })).toHaveCount(1);
+    await expect((await at(page, 'classes')).locator('td', { hasText: new RegExp(`^(nc:)?${c}$`) })).toHaveCount(1);
   }
   const found = await leadingNowhere(page);
   expect([found['Espheim_OR.xml'], found['Org-NineRealms_CD_OR.xml']]).toEqual([0, 0]);
@@ -394,7 +396,7 @@ for (const [a, files, classes] of [
   test(`SIPS ${a}: the scheme's objects resolve`, async ({ page }) => {
     await load(page, [...area(a), ...BOUNDARY]);
     for (const c of classes) {
-      await expect(page.getByTestId('classes').locator('td', { hasText: new RegExp(`^(nc:)?${c}$`) }), c).toHaveCount(1);
+      await expect((await at(page, 'classes')).locator('td', { hasText: new RegExp(`^(nc:)?${c}$`) }), c).toHaveCount(1);
     }
     const found = await leadingNowhere(page);
     for (const f of files) expect(found[f], f).toBe(0);
@@ -410,7 +412,8 @@ async function assessed(page: Page, name: string, also?: string) {
   return {
     row,
     cell: async (column: string) => {
-      const headers = await panel.getByTestId('assessed-elements').locator('thead th').allInnerTexts();
+      // The text as written: headers are upper case only in their style.
+      const headers = await panel.getByTestId('assessed-elements').locator('thead th').allTextContents();
       return (await row.locator('td').nth(headers.findIndex((h) => h.trim() === column)).innerText()).replace(/\s+/g, ' ').trim();
     },
   };

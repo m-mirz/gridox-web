@@ -1,38 +1,101 @@
+/*
+ * gridox's tokens: surfaces, text, an accent, the findings' colours and the grid's voltage bands,
+ * light and dark. Dark follows the system unless the page is set to a theme (`data-theme` on the
+ * root). The older names (--fg, --muted, --panel, --warn, --focus) stay as aliases for the views.
+ */
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #111827;
-  --muted: #4b5563;
-  --line: #d1d5db;
-  --panel: #f3f4f6;
-  --accent: #15803d;
-  --warn: #92400e;
-  --focus: #1d4ed8;
-  --violation: #b91c1c;
-  --warning: #a16207;
-  --info: #1d4ed8;
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --line: #e2e5ea;
+  --line-strong: #cbd1d9;
+  --text: #151a21;
+  --text-2: #4a5361;
+  --text-3: #69727f;
+  --accent: #0b7a5e;
+  --accent-strong: #075c47;
+  --accent-soft: #e2f2ec;
+  --on-accent: #ffffff;
+  --violation: #b42318;
+  --violation-soft: #fdecea;
+  --warning: #b54708;
+  --warning-soft: #fef0e2;
+  --info: #1d5fd1;
+  --info-soft: #e8effc;
+  --shadow: 0 12px 32px rgba(21, 26, 33, 0.14);
   /* Voltage bands, as grid maps colour them. */
   --v300: #c9302c;
   --v200: #2f855a;
   --v100: #2563eb;
   --v30: #7c3aed;
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
+
+  --radius-s: 4px;
+  --radius: 6px;
+  --radius-l: 10px;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --fg: var(--text);
+  --muted: var(--text-2);
+  --panel: var(--surface-2);
+  --warn: var(--warning);
+  --focus: var(--info);
+
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f1318;
+  --surface: #161b22;
+  --surface-2: #1d232c;
+  --line: #2a313b;
+  --line-strong: #3a434f;
+  --text: #e8ebef;
+  --text-2: #b4bcc7;
+  --text-3: #8f99a6;
+  --accent: #3fbf96;
+  --accent-strong: #6fd6b2;
+  --accent-soft: #12312a;
+  --on-accent: #0b1210;
+  --violation: #f2877c;
+  --violation-soft: #3a1714;
+  --warning: #f0a25a;
+  --warning-soft: #36230f;
+  --info: #7fa9f5;
+  --info-soft: #172846;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --v300: #e5534b;
+  --v200: #57ab5a;
+  --v100: #539bf5;
+  --v30: #b083f0;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111827;
-    --fg: #f3f4f6;
-    --muted: #9ca3af;
-    --line: #374151;
-    --panel: #1f2937;
-    --accent: #4ade80;
-    --warn: #fbbf24;
-    --focus: #60a5fa;
-    --violation: #f87171;
-    --warning: #fbbf24;
-    --info: #60a5fa;
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0f1318;
+    --surface: #161b22;
+    --surface-2: #1d232c;
+    --line: #2a313b;
+    --line-strong: #3a434f;
+    --text: #e8ebef;
+    --text-2: #b4bcc7;
+    --text-3: #8f99a6;
+    --accent: #3fbf96;
+    --accent-strong: #6fd6b2;
+    --accent-soft: #12312a;
+    --on-accent: #0b1210;
+    --violation: #f2877c;
+    --violation-soft: #3a1714;
+    --warning: #f0a25a;
+    --warning-soft: #36230f;
+    --info: #7fa9f5;
+    --info-soft: #172846;
+    --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
     --v300: #e5534b;
     --v200: #57ab5a;
     --v100: #539bf5;
@@ -40,26 +103,113 @@
   }
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--fg);
-}
-
-main {
-  max-width: 56rem;
-  margin: 0 auto;
-  padding: 1.5rem 1rem;
+  color: var(--text);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
 }
 
 h2 {
-  margin: 1.5rem 0 0.5rem;
-  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-strong);
+}
+
+:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+/* Controls: one look for every view's buttons, fields and lists. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='file']),
+select,
+textarea {
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+
+summary {
+  cursor: pointer;
 }
 
 table {
@@ -69,14 +219,62 @@ table {
 
 th,
 td {
-  padding: 0.25rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--line);
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+th {
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 td.number,
 th.number {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+/* A count of findings, in its severity's colours; always with a number or word, never colour alone. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.badge.violation {
+  background: var(--violation-soft);
+  color: var(--violation);
+}
+
+.badge.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.badge.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.sub {
+  color: var(--text-3);
 }

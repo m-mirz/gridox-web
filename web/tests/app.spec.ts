@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { zip } from './zipfile';
+import { at, validated, view } from './views';
 
 const fixture = (name: string) => join(import.meta.dirname, 'fixtures', name);
 const EQ = fixture('small_EQ.xml');
@@ -27,8 +28,7 @@ test.beforeEach(async ({ page }) => {
 test('loads a file and shows its classes', async ({ page }) => {
   await input(page).setInputFiles(EQ);
   await expect(page.getByTestId('totals')).toContainText('4 objects from 1 file');
-  await page.getByText('Classes', { exact: true }).click();
-  const row = page.getByTestId('classes').getByRole('row', { name: 'ACLineSegment' });
+  const row = (await at(page, 'classes')).getByRole('row', { name: 'ACLineSegment' });
   await expect(row).toContainText('2');
 });
 
@@ -78,9 +78,9 @@ test.describe('real drags', () => {
   test('onto the grid, adding to a model', async ({ page }) => {
     await input(page).setInputFiles(GRID);
     // Once validation's panels are in, which move the grid down, and with the grid in view.
-    await expect(page.getByTestId('datasets-summary')).toBeVisible();
-    await page.getByTestId('graph').scrollIntoViewIfNeeded();
-    const graph = await page.getByTestId('graph').boundingBox();
+    await expect((await at(page, 'datasets-summary'))).toBeVisible();
+    await (await at(page, 'graph')).scrollIntoViewIfNeeded();
+    const graph = await (await at(page, 'graph')).boundingBox();
     await drag(page, { files: [EQ] }, graph!.x + 50, graph!.y + 50);
     await expect(page.getByTestId('totals')).toContainText('from 2 files');
   });
@@ -149,6 +149,7 @@ test('clears the model', async ({ page }) => {
   await input(page).setInputFiles(EQ);
   await expect(page.getByTestId('totals')).toBeVisible();
   await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
   await expect(page.getByTestId('totals')).toBeHidden();
   await input(page).setInputFiles(EQ);
   await expect(page.getByTestId('totals')).toContainText('4 objects from 1 file');
@@ -222,13 +223,13 @@ test.describe('browsing', () => {
     await page.getByRole('button', { name: 'Expand Anvil 110' }).click();
     await tree(page).getByRole('button', { name: /^Breaker A/ }).click();
     await expect(details(page).getByRole('heading', { name: 'Breaker A' })).toBeVisible();
-    await expect(page.getByTestId('fields')).toContainText('Switch.normalOpen');
-    await expect(page.getByTestId('fields')).toContainText('false');
+    await expect((await at(page, 'fields'))).toContainText('Switch.normalOpen');
+    await expect((await at(page, 'fields'))).toContainText('false');
   });
 
   test('an object picked in the tree is shown inside its substation', async ({ page }) => {
     await tree(page).getByRole('searchbox').fill('breaker a');
-    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
+    await (await at(page, 'hits')).getByRole('button', { name: /Breaker A/ }).click();
     await expect(summary(page)).toContainText('Anvil: 2 equipment, 2 nodes, 1 switch');
     await expect(details(page)).toContainText('Breaker · Anvil 110 · closed');
     await expect(tree(page).locator('[aria-current="true"]')).toContainText('Breaker A');
@@ -239,7 +240,7 @@ test.describe('browsing', () => {
 
   test('goes inside a substation from its details', async ({ page }) => {
     await tree(page).getByRole('searchbox').fill('birch');
-    await page.getByTestId('hits').getByRole('button', { name: /^Birch Substation/ }).click();
+    await (await at(page, 'hits')).getByRole('button', { name: /^Birch Substation/ }).click();
     await details(page).getByRole('button', { name: 'Show inside' }).click();
     await expect(summary(page)).toContainText('Birch: 2 equipment');
     await page.keyboard.press('Escape');
@@ -248,16 +249,16 @@ test.describe('browsing', () => {
 
   test('follows a reference to what it names', async ({ page }) => {
     await tree(page).getByRole('searchbox').fill('breaker a');
-    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
-    await page.getByTestId('fields').getByRole('button', { name: 'Anvil 110' }).click();
+    await (await at(page, 'hits')).getByRole('button', { name: /Breaker A/ }).click();
+    await (await at(page, 'fields')).getByRole('button', { name: 'Anvil 110' }).click();
     await expect(details(page).getByRole('heading', { name: 'Anvil 110' })).toBeVisible();
     await expect(tree(page).locator('[aria-current="true"]')).toContainText('Anvil 110');
   });
 
   test('an object says what refers to it, and Back returns', async ({ page }) => {
     await tree(page).getByRole('searchbox').fill('anvil 110');
-    await page.getByTestId('hits').getByRole('button', { name: /Anvil 110/ }).click();
-    const referrers = page.getByTestId('referrers');
+    await (await at(page, 'hits')).getByRole('button', { name: /Anvil 110/ }).click();
+    const referrers = (await at(page, 'referrers'));
     await expect(details(page).getByRole('heading', { name: 'Referred to by 3' })).toBeVisible();
     await expect(referrers).toContainText('Equipment.EquipmentContainer');
     await referrers.getByRole('button', { name: 'Breaker A' }).click();
@@ -268,8 +269,8 @@ test.describe('browsing', () => {
 
   test('a field can say what the vocabulary says of it', async ({ page }) => {
     await tree(page).getByRole('searchbox').fill('breaker a');
-    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
-    const fields = page.getByTestId('fields');
+    await (await at(page, 'hits')).getByRole('button', { name: /Breaker A/ }).click();
+    const fields = (await at(page, 'fields'));
     await expect(fields).toContainText('Switch.normalOpen');
     const before = (await fields.textContent())!.length;
     await details(page).getByLabel('Descriptions').check();
@@ -304,30 +305,32 @@ test.describe('validation', () => {
 
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles(GRID);
+    await validated(page);
+    await view(page, 'Validation');
     await expect(findings(page)).toContainText(/violation|warning|info/);
   });
 
   test('runs after loading, and lists each broken rule with its findings', async ({ page }) => {
     await expect(findings(page)).toContainText('in 1 file');
     await page.getByText(/rules? broken/).click();
-    const rule = page.getByTestId('findings').locator('.rules > li').first();
+    const rule = (await at(page, 'findings')).locator('.rules > li').first();
     await rule.locator('summary').click();
     await expect(rule.getByTestId('found').locator('li').first()).toBeVisible();
   });
 
   test('a finding leads to its object, which lists it', async ({ page }) => {
     await page.getByText(/rules? broken/).click();
-    const rule = page.getByTestId('findings').locator('.rules > li').first();
+    const rule = (await at(page, 'findings')).locator('.rules > li').first();
     await rule.locator('summary').click();
     const first = rule.getByTestId('found').getByRole('button').first();
     const name = (await first.textContent())!.trim();
     await first.click();
-    await expect(page.getByTestId('details').getByRole('heading', { name, exact: true })).toBeVisible();
-    await expect(page.getByTestId('object-findings')).toBeVisible();
+    await expect((await at(page, 'details')).getByRole('heading', { name, exact: true })).toBeVisible();
+    await expect((await at(page, 'object-findings'))).toBeVisible();
   });
 
   test('the tree counts findings and can show only what holds them', async ({ page }) => {
-    const tree = page.getByTestId('tree');
+    const tree = (await at(page, 'tree'));
     await expect(tree.locator('.badge').first()).toBeVisible();
     await tree.getByLabel('With findings only').check();
     await expect(tree.locator('.row').first()).toBeVisible();
@@ -335,8 +338,11 @@ test.describe('validation', () => {
     await expect(tree.locator('.row .badge')).toHaveCount(sections);
   });
 
-  test('the grid says what was found on it', async ({ page }) => {
-    await expect(page.getByTestId('grid-summary')).toContainText('not on the grid');
+  test('the findings are the tree’s to show, not the grid’s', async ({ page }) => {
+    await view(page, 'Explore');
+    await expect(page.getByTestId('grid-summary')).toContainText('substation');
+    await expect(page.getByTestId('grid-summary')).not.toContainText(/violation|warning|info/);
+    await expect(page.getByTestId('tree').locator('.badge').first()).toBeVisible();
   });
 
   test('more checks find more, and are remembered', async ({ page }) => {
@@ -355,47 +361,47 @@ test.describe('validation', () => {
 test.describe('datasets', () => {
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles([GRID, SECOND]);
-    await expect(page.getByTestId('datasets-summary')).toBeVisible();
+    await expect((await at(page, 'datasets-summary'))).toBeVisible();
   });
 
   test('say what is defined twice and which header references are not loaded', async ({ page }) => {
-    const summary = page.getByTestId('datasets-summary');
+    const summary = (await at(page, 'datasets-summary'));
     await expect(summary).toContainText('2 files');
     await expect(summary).toContainText('1 object defined more than once');
     await expect(summary).toContainText('1 header reference not loaded');
     await summary.click();
-    await page.getByTestId('twice').getByRole('button', { name: 'Breaker A' }).click();
-    await expect(page.getByTestId('defined-in')).toContainText('Defined by 2 files: grid_EQ.xml, second_EQ.xml');
+    await (await at(page, 'twice')).getByRole('button', { name: 'Breaker A' }).click();
+    await expect((await at(page, 'defined-in'))).toContainText('Defined by 2 files: grid_EQ.xml, second_EQ.xml');
   });
 
   test('a header shows where its references lead', async ({ page }) => {
-    await page.getByTestId('datasets-summary').click();
-    const files = page.getByTestId('dataset-files');
+    await (await at(page, 'datasets-summary')).click();
+    const files = (await at(page, 'dataset-files'));
     await files.getByText('second_EQ.xml').click();
     await expect(files.locator('.missing')).toHaveText('urn:uuid:not-loaded not loaded');
     await files.getByRole('button', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' }).click();
-    await expect(page.getByTestId('details').getByRole('heading', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' })).toBeVisible();
-    await expect(page.getByTestId('referrers')).toContainText('Model.DependentOn');
+    await expect((await at(page, 'details')).getByRole('heading', { name: 'urn:uuid:00000000-0000-4000-8000-000000000f01' })).toBeVisible();
+    await expect((await at(page, 'referrers'))).toContainText('Model.DependentOn');
   });
 
   test('reference data has a page of its own', async ({ page }) => {
-    await page.getByTestId('tree').getByRole('searchbox').fill('breaker a');
-    await page.getByTestId('hits').getByRole('button', { name: /Breaker A/ }).click();
-    await page.getByTestId('fields').getByRole('button', { name: 'A concept' }).click();
-    const details = page.getByTestId('details');
+    await (await at(page, 'tree')).getByRole('searchbox').fill('breaker a');
+    await (await at(page, 'hits')).getByRole('button', { name: /Breaker A/ }).click();
+    await (await at(page, 'fields')).getByRole('button', { name: 'A concept' }).click();
+    const details = (await at(page, 'details'));
     await expect(details).toContainText('Reference data, outside the CIM class tables.');
-    await expect(page.getByTestId('referrers')).toContainText('Switch.concept');
+    await expect((await at(page, 'referrers'))).toContainText('Switch.concept');
   });
 });
 
 test.describe('network codes', () => {
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles([GRID, NC]);
-    await expect(page.getByTestId('network-codes')).toBeVisible();
+    await expect((await at(page, 'network-codes'))).toBeVisible();
   });
 
   test('a contingency shows its equipment, and where the grid has it', async ({ page }) => {
-    const row = page.getByTestId('contingencies').getByRole('row', { name: /Loss of Anvil-Birch/ });
+    const row = (await at(page, 'contingencies')).getByRole('row', { name: /Loss of Anvil-Birch/ });
     await expect(row).toContainText('Anvil-Birch');
     await expect(row).toContainText('outOfService');
     await expect(row).toContainText('Flow on Anvil-Birch');
@@ -408,7 +414,7 @@ test.describe('network codes', () => {
 
   test('assessed elements say how they are assessed', async ({ page }) => {
     await page.getByRole('tab', { name: /Assessed elements/ }).click();
-    const table = page.getByTestId('assessed-elements');
+    const table = (await at(page, 'assessed-elements'));
     const scanned = table.getByRole('row', { name: /Breaker A scanned/ });
     await expect(scanned).toContainText('nonNativeCapacityCalculationRegion');
     await expect(scanned).toContainText('_region');
@@ -417,15 +423,16 @@ test.describe('network codes', () => {
   });
 
   test('a table leads to an object\'s page', async ({ page }) => {
-    await page.getByTestId('contingencies').getByRole('button', { name: 'Loss of Anvil-Birch' }).click();
-    await expect(page.getByTestId('details').getByRole('heading', { name: 'Loss of Anvil-Birch' })).toBeVisible();
-    await expect(page.getByTestId('referrers')).toContainText('ContingencyElement.Contingency');
+    await (await at(page, 'contingencies')).getByRole('button', { name: 'Loss of Anvil-Birch' }).click();
+    await expect((await at(page, 'details')).getByRole('heading', { name: 'Loss of Anvil-Birch' })).toBeVisible();
+    await expect((await at(page, 'referrers'))).toContainText('ContingencyElement.Contingency');
   });
 
   test('a remedial action says what it changes, and what applying it gives', async ({ page }) => {
     await input(page).setInputFiles(RA);
+    await view(page, 'Network codes');
     await page.getByRole('tab', { name: /Remedial actions [1-9]/ }).click();
-    const table = page.getByTestId('remedial-actions');
+    const table = (await at(page, 'remedial-actions'));
     const open = table.getByRole('row', { name: /^Open Breaker A/ });
     await expect(open).toContainText('Switch.open = 1.0 (absolute)');
     await expect(open).toContainText('exclusive');
@@ -440,30 +447,30 @@ test.describe('network codes', () => {
     await input(page).setInputFiles([RA, RAS]);
     // Once the tables have the files' schedules.
     await page.getByRole('tab', { name: /Schedules [1-9]/ }).click();
-    const exclusive = page.getByTestId('exclusive');
+    const exclusive = (await at(page, 'exclusive'));
     await expect(exclusive).toContainText('Breaker A either way');
     await expect(exclusive).toContainText('one time more than one is active: 2024-11-20T12:00:00Z');
     // Both actions' event schedules are on the timeline, with the overlap marked.
-    const timeline = page.getByTestId('timeline');
+    const timeline = (await at(page, 'timeline'));
     await expect(timeline.getByRole('button', { name: 'Open A, when' })).toBeVisible();
     await expect(timeline.getByRole('button', { name: 'Keep A closed, when' })).toBeVisible();
     await expect(timeline).toContainText('2024-11-20T12:00:00+01:00 isActive true');
     await expect(timeline).toContainText('exclusive actions active together');
     // A time point leads to its page.
     await timeline.getByRole('button', { name: '2024-11-20 10:00 UTC: isActive true' }).click();
-    await expect(page.getByTestId('details').getByRole('heading', { name: '_00000000-0000-4000-8000-000000000504' })).toBeVisible();
+    await expect((await at(page, 'details')).getByRole('heading', { name: '_00000000-0000-4000-8000-000000000504' })).toBeVisible();
   });
 
   test('a cancelled schedule says when, and that it has no time points', async ({ page }) => {
     await input(page).setInputFiles([RA, RAS]);
     // Once the tables have the files' schedules.
     await page.getByRole('tab', { name: /Schedules [1-9]/ }).click();
-    const row = page.getByTestId('schedules').getByRole('row', { name: /Maintenance of Breaker A/ });
+    const row = (await at(page, 'schedules')).getByRole('row', { name: /Maintenance of Breaker A/ });
     await expect(row).toContainText('cancelledDateTime = 2024-11-19T08:34:00Z');
     await expect(row).toContainText('none');
     await row.getByRole('checkbox').check();
-    await expect(page.getByTestId('timeline')).toContainText('cancelledDateTime 2024-11-19T08:34:00Z');
-    const key = page.getByTestId('schedules').getByRole('row', { name: /Shift key 1/ });
+    await expect((await at(page, 'timeline'))).toContainText('cancelledDateTime 2024-11-19T08:34:00Z');
+    const key = (await at(page, 'schedules')).getByRole('row', { name: /Shift key 1/ });
     await expect(key).toContainText('Distribution 1');
     await page.setViewportSize({ width: 375, height: 700 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
@@ -471,61 +478,61 @@ test.describe('network codes', () => {
 
   test('filters by name', async ({ page }) => {
     await page.getByLabel('Filter the table').fill('nothing like it');
-    await expect(page.getByTestId('contingencies').getByRole('row')).toHaveCount(1);
+    await expect((await at(page, 'contingencies')).getByRole('row')).toHaveCount(1);
   });
 });
 
 test.describe('power flow', () => {
   test('solves, says what it solved, and how far from the SV', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV]);
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
-    await expect(page.getByTestId('pf-options')).toContainText('the imbalance taken by the angle reference, reactive limits held');
-    await expect(page.getByTestId('pf-components')).toContainText('Anvil 110');
-    await expect(page.getByTestId('pf-components')).toContainText(/10\.5\d %, 0\.27° at most, over 2 nodes/);
-    await expect(page.getByTestId('pf-violations').getByRole('row', { name: /Anvil-Birch/ })).toContainText('133.1 %');
+    await expect((await at(page, 'pf-verdict'))).toHaveText('2 nodes solved, in 1 component.');
+    await expect((await at(page, 'pf-options'))).toContainText('the imbalance taken by the angle reference, reactive limits held');
+    await expect((await at(page, 'pf-components'))).toContainText('Anvil 110');
+    await expect((await at(page, 'pf-components'))).toContainText(/10\.5\d %, 0\.27° at most, over 2 nodes/);
+    await expect((await at(page, 'pf-violations')).getByRole('row', { name: /Anvil-Birch/ })).toContainText('133.1 %');
     // Furthest from the SV first.
-    await expect(page.getByTestId('pf-nodes').getByRole('row').nth(1)).toContainText('Birch 110');
-    await expect(page.getByTestId('pf-nodes').getByRole('row').nth(1)).toContainText(/110\.5\d/);
+    await expect((await at(page, 'pf-nodes')).getByRole('row').nth(1)).toContainText('Birch 110');
+    await expect((await at(page, 'pf-nodes')).getByRole('row').nth(1)).toContainText(/110\.5\d/);
   });
 
   test('colours the grid by it, and can go back to voltage levels', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV]);
-    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('flow-legend')).toBeVisible();
+    await (await at(page, 'power-flow')).getByRole('button', { name: 'Solve' }).click();
+    await expect((await at(page, 'flow-legend'))).toBeVisible();
     await page.getByLabel('Colour by').selectOption('voltage');
-    await expect(page.getByTestId('flow-legend')).toBeHidden();
-    await page.getByTestId('pf-nodes').getByRole('row', { name: /Birch 110/ }).getByRole('button', { name: 'Show on grid' }).click();
+    await expect((await at(page, 'flow-legend'))).toBeHidden();
+    await (await at(page, 'pf-nodes')).getByRole('row', { name: /Birch 110/ }).getByRole('button', { name: 'Show on grid' }).click();
     await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
   });
 
   test('the options chosen are the ones it says it used', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV]);
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByLabel('Imbalance taken by').selectOption('capability');
     await pf.getByLabel('Hold reactive limits').uncheck();
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-options')).toContainText('taken by the machines, by capability');
-    await expect(page.getByTestId('pf-options')).toContainText('reactive limits not held');
+    await expect((await at(page, 'pf-options'))).toContainText('taken by the machines, by capability');
+    await expect((await at(page, 'pf-options'))).toContainText('reactive limits not held');
   });
 
   test('from the switches, it solves as from the TP', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV]);
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByLabel('Buses from').selectOption({ label: 'the switches' });
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
-    await expect(page.getByTestId('pf-options')).toContainText('the buses from the switches');
+    await expect((await at(page, 'pf-verdict'))).toHaveText('2 nodes solved, in 1 component.');
+    await expect((await at(page, 'pf-options'))).toContainText('the buses from the switches');
   });
 
   test('a remedial action applied opens its switch, and says what that changed', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV, RA]);
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByLabel('Remedial action applied').selectOption({ label: 'Open Breaker A' });
     await expect(pf.getByLabel('Buses from')).toBeDisabled();
     await pf.getByRole('button', { name: 'Solve' }).click();
-    const applied = page.getByTestId('pf-applied');
+    const applied = (await at(page, 'pf-applied'));
     await expect(applied).toContainText('With Open Breaker A applied: Breaker A closed → open.');
     await expect(applied).toContainText('1 node solved, 2 without it.');
     await expect(applied).toContainText('Currents past their limits: 0, 1 without it.');
@@ -538,63 +545,64 @@ test.describe('power flow', () => {
 
   test('an action takes its value from an intensity schedule at the scenario time', async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV, RA, SCHEDULE]);
+    await view(page, 'Network codes');
     await page.getByRole('tab', { name: /Remedial actions [1-9]/ }).click();
-    const row = page.getByTestId('remedial-actions').getByRole('row', { name: /^Keep Breaker A closed/ });
+    const row = (await at(page, 'remedial-actions')).getByRole('row', { name: /^Keep Breaker A closed/ });
     await expect(row.getByTestId('applied')).toContainText('closed → open');
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByLabel('Remedial action applied').selectOption({ label: 'Keep Breaker A closed' });
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-applied')).toContainText('Breaker A closed → open.');
+    await expect((await at(page, 'pf-applied'))).toContainText('Breaker A closed → open.');
   });
 
   test('says why nothing was solved, and a new file takes the result away', async ({ page }) => {
     await input(page).setInputFiles(GRID);
-    const pf = page.getByTestId('power-flow');
+    const pf = (await at(page, 'power-flow'));
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-error')).toContainText('Nothing was solved');
+    await expect((await at(page, 'pf-error'))).toContainText('Nothing was solved');
     await input(page).setInputFiles([STATE, SV]);
-    await expect(page.getByTestId('pf-error')).toBeHidden();
+    await expect((await at(page, 'pf-error'))).toBeHidden();
     await pf.getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-verdict')).toBeVisible();
+    await expect((await at(page, 'pf-verdict'))).toBeVisible();
   });
 });
 
 test.describe('security analysis', () => {
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV, NC, MORE]);
-    await expect(page.getByTestId('security')).toBeVisible();
+    await expect((await at(page, 'security'))).toBeVisible();
   });
 
   test('runs every contingency, and says what each gave', async ({ page }) => {
-    const sa = page.getByTestId('security');
+    const sa = (await at(page, 'security'));
     await sa.getByRole('button', { name: 'Run 4 contingencies' }).click();
-    await expect(page.getByTestId('sa-summary')).toContainText('4 contingencies: 3 solved, 1 name equipment the model lacks.');
-    await expect(page.getByTestId('sa-summary')).toContainText('1 violation in the base case, 1 violation after contingencies.');
-    await expect(page.getByTestId('sa-options')).toContainText('the imbalance taken by the machines, by capability, reactive limits not held');
+    await expect((await at(page, 'sa-summary'))).toContainText('4 contingencies: 3 solved, 1 name equipment the model lacks.');
+    await expect((await at(page, 'sa-summary'))).toContainText('1 violation in the base case, 1 violation after contingencies.');
+    await expect((await at(page, 'sa-options'))).toContainText('the imbalance taken by the machines, by capability, reactive limits not held');
     await expect(sa).toContainText('Naming equipment the model lacks, so not run: Loss of Unit X');
-    const nothing = page.getByTestId('sa-contingencies').getByRole('row', { name: /Nothing lost/ });
+    const nothing = (await at(page, 'sa-contingencies')).getByRole('row', { name: /Nothing lost/ });
     await expect(nothing).toContainText('133.1 %');
     await nothing.getByRole('button', { name: 'Violations' }).click();
-    await expect(page.getByTestId('sa-contingencies')).toContainText('266 A on Anvil-Birch PATL (PATL, 200 A), 133.1 %');
-    await page.getByTestId('sa-contingencies').getByRole('row', { name: /Loss of Anvil-Birch/ }).getByRole('button', { name: 'Show on grid' }).click();
+    await expect((await at(page, 'sa-contingencies'))).toContainText('266 A on Anvil-Birch PATL (PATL, 200 A), 133.1 %');
+    await (await at(page, 'sa-contingencies')).getByRole('row', { name: /Loss of Anvil-Birch/ }).getByRole('button', { name: 'Show on grid' }).click();
     await expect(page.getByRole('button', { name: 'Clear highlight' })).toBeVisible();
   });
 
   test('lists the elements past a limit, and their violations', async ({ page }) => {
-    const sa = page.getByTestId('security');
+    const sa = (await at(page, 'security'));
     await sa.getByRole('button', { name: /^Run/ }).click();
     await sa.getByRole('tab', { name: /By element/ }).click();
-    const line = page.getByTestId('sa-elements').getByRole('row', { name: /Anvil-Birch/ });
+    const line = (await at(page, 'sa-elements')).getByRole('row', { name: /Anvil-Birch/ });
     await expect(line).toContainText('Nothing lost');
     await line.getByRole('button', { name: 'Violations' }).click();
-    await expect(page.getByTestId('sa-elements')).toContainText('base case');
-    await expect(page.getByTestId('sa-elements')).toContainText('after Nothing lost');
+    await expect((await at(page, 'sa-elements'))).toContainText('base case');
+    await expect((await at(page, 'sa-elements'))).toContainText('after Nothing lost');
   });
 
   test('downloads a SAR once its header is given, and reads one back beside its own', async ({ page }) => {
-    const sa = page.getByTestId('security');
+    const sa = (await at(page, 'security'));
     await sa.getByRole('button', { name: /^Run/ }).click();
-    const form = page.getByTestId('sa-download');
+    const form = (await at(page, 'sa-download'));
     await form.getByText('Download the SAR').click();
     await expect(form.getByLabel(/Publisher/)).toHaveValue('https://energy.referencedata.eu/test/party/South');
     await expect(form.getByRole('button', { name: 'Download SAR' })).toBeDisabled();
@@ -608,8 +616,8 @@ test.describe('security analysis', () => {
     cpSync(path, copy);
     await input(page).setInputFiles(copy);
     await sa.getByRole('tab', { name: /Supplied SAR/ }).click();
-    await expect(page.getByTestId('sa-supplied')).toContainText('Anvil-Birch');
-    await expect(page.getByTestId('sa-supplied')).toContainText('not run');
+    await expect((await at(page, 'sa-supplied'))).toContainText('Anvil-Birch');
+    await expect((await at(page, 'sa-supplied'))).toContainText('not run');
   });
 
   test('is shared with other workers when there are many contingencies, and gives the same', async ({ page }) => {
@@ -627,27 +635,28 @@ ${many}
 </rdf:RDF>`,
     );
     await input(page).setInputFiles(file);
-    const sa = page.getByTestId('security');
+    const sa = (await at(page, 'security'));
     await sa.getByRole('button', { name: 'Run 49 contingencies' }).click();
-    await expect(page.getByTestId('sa-summary')).toContainText('49 contingencies: 48 solved, 1 name equipment the model lacks.');
-    await expect(page.getByTestId('sa-summary')).toContainText('1 violation in the base case, 46 violations after contingencies.');
+    await expect((await at(page, 'sa-summary'))).toContainText('49 contingencies: 48 solved, 1 name equipment the model lacks.');
+    await expect((await at(page, 'sa-summary'))).toContainText('1 violation in the base case, 46 violations after contingencies.');
     if ((await page.evaluate(() => navigator.hardwareConcurrency)) > 1) {
-      await expect(page.getByTestId('sa-options')).toContainText(/in [2-4] workers/);
+      await expect((await at(page, 'sa-options'))).toContainText(/in [2-4] workers/);
     }
   });
 
   test('solves a contingency again after its curative actions, schedules read at the time chosen', async ({ page }) => {
     await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
     await input(page).setInputFiles([GRID, STATE, SV, NC, MORE, RA, CURATIVE, SCHEDULE]);
     await expect(page.getByTestId('totals')).toContainText('from 8 files');
-    const sa = page.getByTestId('security');
+    const sa = (await at(page, 'security'));
     await expect(sa.getByRole('button', { name: 'Run 4 contingencies' })).toBeVisible();
     await sa.getByLabel('Curative actions').check();
     await expect(sa.getByLabel('Buses from')).toBeDisabled();
     await sa.getByRole('button', { name: 'Run 4 contingencies' }).click();
-    const curative = page.getByTestId('sa-curative');
+    const curative = (await at(page, 'sa-curative'));
     await expect(curative).toContainText('Curative actions after 1 contingency, schedules read at the scenario time: 1 solved again; 0 violations after them.');
-    const nothing = page.getByTestId('sa-contingencies').getByRole('row', { name: /Nothing lost/ });
+    const nothing = (await at(page, 'sa-contingencies')).getByRole('row', { name: /Nothing lost/ });
     await expect(nothing.getByTestId('sa-after')).toContainText('0 violations');
     await expect(nothing.getByTestId('sa-after')).toContainText('Open Breaker A');
     // The times to read schedules at: the scenario time, and the schedule's one point.
@@ -655,6 +664,7 @@ ${many}
     // Without the schedule, "Keep Breaker A closed" takes its range's value and, applied after
     // "Open Breaker A", closes the breaker again: the violation stays.
     await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
     await input(page).setInputFiles([GRID, STATE, SV, NC, MORE, RA, CURATIVE]);
     await expect(page.getByTestId('totals')).toContainText('from 7 files');
     await expect(sa.getByRole('button', { name: 'Run 4 contingencies' })).toBeVisible();
@@ -666,19 +676,20 @@ ${many}
 
   test('a model without contingencies has no analysis', async ({ page }) => {
     await input(page).setInputFiles(fixture('second_EQ.xml'));
-    await expect(page.getByTestId('security')).toBeVisible();
+    await expect((await at(page, 'security'))).toBeVisible();
     await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
     await input(page).setInputFiles([GRID, STATE, SV]);
-    await expect(page.getByTestId('power-flow')).toBeVisible();
-    await expect(page.getByTestId('security')).toBeHidden();
+    await expect((await at(page, 'power-flow'))).toBeVisible();
+    await expect((await at(page, 'security'))).toBeHidden();
   });
 });
 
 test.describe('editing', () => {
   const details = (page: Page) => page.getByTestId('details');
   const open = async (page: Page, name: RegExp, hit = name) => {
-    await page.getByTestId('tree').getByRole('searchbox').fill(name.source.replace(/[\^$]/g, '').toLowerCase());
-    await page.getByTestId('hits').getByRole('button', { name: hit }).click();
+    await (await at(page, 'tree')).getByRole('searchbox').fill(name.source.replace(/[\^$]/g, '').toLowerCase());
+    await (await at(page, 'hits')).getByRole('button', { name: hit }).click();
     await expect(details(page).getByRole('heading', { name })).toBeVisible();
     const edit = details(page).getByTestId('edit');
     await edit.getByText('Edit', { exact: true }).click();
@@ -687,11 +698,12 @@ test.describe('editing', () => {
 
   test.beforeEach(async ({ page }) => {
     await input(page).setInputFiles([GRID, STATE, SV]);
-    await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
+    await validated(page, 30_000);
   });
 
   test('CO_UC1: equipment is added to a contingency, shaped like its first', async ({ page }) => {
     await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
     await input(page).setInputFiles([GRID, STATE, SV, NC]);
     await expect(page.getByTestId('totals')).toContainText('from 4 files');
     const edit = await open(page, /^Loss of Anvil-Birch/);
@@ -705,6 +717,7 @@ test.describe('editing', () => {
 
   test('RA_UC3: a schedule is disabled from a time, and enabled again', async ({ page }) => {
     await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
     await input(page).setInputFiles([GRID, STATE, SV, RA, fixture('nc_SIS_enabling.xml')]);
     await expect(page.getByTestId('totals')).toContainText('from 5 files');
     const edit = await open(page, /^TA open enabling/);
@@ -728,8 +741,8 @@ test.describe('editing', () => {
     await expect(bar).not.toContainText('validating', { timeout: 30_000 });
     await expect(details(page).getByTestId('fields')).toContainText('80');
     // The power flow solves the model as edited.
-    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-violations')).toContainText(/2\d\d\.\d %/);
+    await (await at(page, 'power-flow')).getByRole('button', { name: 'Solve' }).click();
+    await expect((await at(page, 'pf-violations'))).toContainText(/2\d\d\.\d %/);
     const [download] = await Promise.all([page.waitForEvent('download'), bar.getByRole('button', { name: 'Download grid_state.xml' }).click()]);
     expect(readFileSync(await download.path(), 'utf8')).toContain('<cim:EnergyConsumer.p>80</cim:EnergyConsumer.p>');
     await bar.getByRole('button', { name: 'Undo' }).click();
@@ -744,9 +757,9 @@ test.describe('editing', () => {
     await edit.locator('.row', { hasText: 'EnergyConsumer.p' }).getByRole('button', { name: 'Set' }).click();
     await expect(page.getByTestId('edited-files')).toContainText('1 file edited');
     await page.reload();
-    await expect(page.getByTestId('findings-summary')).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('tree').getByRole('searchbox').fill('load b');
-    await page.getByTestId('hits').getByRole('button', { name: /^Load B/ }).click();
+    await validated(page, 30_000);
+    await (await at(page, 'tree')).getByRole('searchbox').fill('load b');
+    await (await at(page, 'hits')).getByRole('button', { name: /^Load B/ }).click();
     await expect(details(page).getByTestId('fields')).toContainText('80');
   });
 
@@ -780,7 +793,7 @@ test.describe('editing', () => {
     await expect(bar.getByRole('button', { name: 'Download nc_RAS_counter-proposal.xml' })).toBeVisible();
     // The copy is shown: proposed, its points not active, replacing the one refused.
     await expect(details(page).getByRole('heading', { name: 'Open A, proposed' })).toBeVisible();
-    await expect(page.getByTestId('referrers')).toContainText('RemedialActionScheduleDependency.ProposedRemedialActionSchedule');
+    await expect((await at(page, 'referrers'))).toContainText('RemedialActionScheduleDependency.ProposedRemedialActionSchedule');
     await expect(page.getByTestId('totals')).toContainText('from 6 files');
     await bar.getByRole('button', { name: 'Undo' }).click();
     await expect(bar).toBeHidden();
@@ -798,8 +811,8 @@ test.describe('editing', () => {
     await expect(edit.getByTestId('delete-preview')).toContainText('Deletes 1 object and 0 references to it, in grid_EQ.xml.');
     await edit.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(page.getByTestId('edited-files')).toContainText('1 file edited');
-    await page.getByTestId('tree').getByRole('searchbox').fill('breaker c');
-    await expect(page.getByTestId('hits').getByRole('button', { name: /Breaker C/ })).toHaveCount(0);
+    await (await at(page, 'tree')).getByRole('searchbox').fill('breaker c');
+    await expect((await at(page, 'hits')).getByRole('button', { name: /Breaker C/ })).toHaveCount(0);
   });
 });
 
@@ -818,8 +831,8 @@ test.describe('choosing many files at once', () => {
     writeFileSync(path, archive);
     await input(page).setInputFiles(path);
     await expect(page.getByTestId('totals')).toContainText('from 3 files');
-    await page.getByTestId('power-flow').getByRole('button', { name: 'Solve' }).click();
-    await expect(page.getByTestId('pf-verdict')).toHaveText('2 nodes solved, in 1 component.');
+    await (await at(page, 'power-flow')).getByRole('button', { name: 'Solve' }).click();
+    await expect((await at(page, 'pf-verdict'))).toHaveText('2 nodes solved, in 1 component.');
   });
 
   test('an archive that cannot be read is said so, and the rest is read', async ({ page }) => {
@@ -851,7 +864,7 @@ test.describe('choosing many files at once', () => {
 
 test('says so when the files hold no grid', async ({ page }) => {
   await input(page).setInputFiles(EQ);
-  await expect(page.getByTestId('no-grid')).toBeVisible();
+  await expect((await at(page, 'no-grid'))).toBeVisible();
 });
 
 test('a reload brings the files back, until they are cleared', async ({ playwright, browserName, baseURL }) => {
@@ -865,6 +878,7 @@ test('a reload brings the files back, until they are cleared', async ({ playwrig
   await expect(page.getByTestId('totals')).toContainText('4 objects from 2 files');
   await expect(page.getByTestId('kept')).toBeVisible();
   await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
   await expect(page.getByTestId('totals')).toBeHidden();
   await page.reload();
   await expect(input(page)).toBeAttached();
@@ -898,17 +912,17 @@ test('draws RealGrid', async ({ page }, info) => {
   await input(page).setInputFiles(files);
   await expect(page.getByTestId('totals')).toContainText('objects from', { timeout: 120_000 });
   const read = Date.now() - started;
-  await expect(page.getByTestId('grid-summary')).toContainText('substations', { timeout: 120_000 });
+  await expect((await at(page, 'grid-summary'))).toContainText('substations', { timeout: 120_000 });
   const laid = Date.now() - started;
   await expect.poll(() => painted(page), { timeout: 60_000 }).toBe(true);
   console.log(`${info.project.name}: read ${read} ms, laid out ${laid} ms, drawn ${Date.now() - started} ms`);
-  console.log(await page.getByTestId('grid-summary').textContent());
+  console.log(await (await at(page, 'grid-summary')).textContent());
   expect(problems).toEqual([]);
   if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT });
-  await page.getByTestId('tree').getByRole('searchbox').fill('a');
-  await expect(page.getByTestId('hits').getByRole('button').first()).toBeVisible({ timeout: 30_000 });
+  await (await at(page, 'tree')).getByRole('searchbox').fill('a');
+  await expect((await at(page, 'hits')).getByRole('button').first()).toBeVisible({ timeout: 30_000 });
   await page.reload();
-  await expect(page.getByTestId('grid-summary')).toContainText('substations', { timeout: 120_000 });
+  await expect((await at(page, 'grid-summary'))).toContainText('substations', { timeout: 120_000 });
   console.log(`${info.project.name}: back after a reload`);
 });
 
@@ -921,19 +935,20 @@ test('finds on ReliCapGrid what cimoxide finds', async ({ page }) => {
   for (const [area, expected] of [['Svedala', 572], ['Belgovia', 82]] as const) {
     if (await page.getByRole('button', { name: 'Clear' }).isVisible()) {
       await page.getByRole('button', { name: 'Clear' }).click();
-      await expect(page.getByTestId('findings-summary')).toBeHidden();
+      await expect(page.getByRole('heading', { name: 'Open a model' })).toBeVisible();
+      await expect((await at(page, 'findings-summary'))).toBeHidden();
     }
     await input(page).setInputFiles(grid(area));
-    await expect(page.getByTestId('findings-summary')).toContainText('in 4 files', { timeout: 60_000 });
+    await expect((await at(page, 'findings-summary'))).toContainText('in 4 files', { timeout: 60_000 });
     for (const label of ['Common cross-profile checks', 'Modelling-quality checks']) {
       const box = page.getByLabel(label);
       if (!(await box.isChecked())) {
         await box.check();
-        await expect(page.getByTestId('findings-summary')).not.toHaveText('Validating…', { timeout: 60_000 });
+        await expect((await at(page, 'findings-summary'))).not.toHaveText('Validating…', { timeout: 60_000 });
       }
     }
-    await expect(page.getByTestId('findings-summary')).toContainText('in 4 files', { timeout: 60_000 });
-    const text = (await page.getByTestId('findings-summary').textContent())!;
+    await expect((await at(page, 'findings-summary'))).toContainText('in 4 files', { timeout: 60_000 });
+    const text = (await (await at(page, 'findings-summary')).textContent())!;
     const total = [...text.matchAll(/([\d,]+) (violation|warning|info)/g)].reduce((a, m) => a + Number(m[1].replace(/,/g, '')), 0);
     expect(total, `${area}: ${text}`).toBe(expected);
   }

@@ -79,6 +79,13 @@
     if (entry) show(entry);
   }
 
+  /** The inspector closed: nothing selected, the grid whole again. */
+  function close() {
+    id = null;
+    info = null;
+    gridView?.unselect();
+  }
+
   function back() {
     const previous = history[history.length - 1];
     history = history.slice(0, -1);
@@ -88,33 +95,81 @@
 
 <div class="browse">
   <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
-  <GridView bind:this={gridView} {client} {version} {findingsVersion} {validated} {flow} onselect={selectedOnGrid} />
-  <Details {client} {id} {info} {findingsVersion} onnavigate={(to) => navigate(to)} onback={history.length ? back : null} {onedited} />
+  <div class="stage">
+    <GridView bind:this={gridView} {client} {version} {flow} onselect={selectedOnGrid} />
+    {#if id || info}
+      <div class="drawer" data-testid="inspector">
+        <Details {client} {id} {info} {findingsVersion} onnavigate={(to) => navigate(to)} onback={history.length ? back : null} onclose={close} {onedited} />
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>
   .browse {
     display: grid;
-    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr) minmax(14rem, 20rem);
-    height: max(30rem, calc(100dvh - 2rem));
-    margin-top: 1rem;
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+    flex-grow: 1;
+    min-height: 0;
+  }
+
+  .browse > :global(:first-child) {
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .stage {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .stage > :global(:first-child) {
+    flex-grow: 1;
+    min-width: 0;
+  }
+
+  /* The inspector: a drawer over the grid's right side, the grid whole behind it. */
+  .drawer {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 2;
+    display: flex;
+    width: min(24rem, calc(100% - 1.5rem));
+    overflow: hidden;
+    background: var(--surface);
     border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    box-shadow: var(--shadow);
   }
 
-  .browse > :global(* + *) {
-    border-left: 1px solid var(--line);
+  .drawer > :global(*) {
+    flex-grow: 1;
   }
 
-  @media (max-width: 60rem) {
+  @media (max-width: 48rem) {
     .browse {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: 20rem 26rem auto;
-      height: auto;
+      grid-template-rows: minmax(12rem, 40%) minmax(0, 1fr);
     }
 
-    .browse > :global(* + *) {
-      border-left: none;
-      border-top: 1px solid var(--line);
+    .browse > :global(:first-child) {
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+    }
+
+    /* On a phone, a sheet from the bottom. */
+    .drawer {
+      top: auto;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: auto;
+      height: 70%;
+      border-radius: var(--radius-l) var(--radius-l) 0 0;
     }
   }
 </style>

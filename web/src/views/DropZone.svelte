@@ -34,37 +34,34 @@
   }
 </script>
 
-<label
-  class:compact
-  data-testid="dropzone"
->
-  <input
-    type="file"
-    multiple
-    accept=".xml,application/xml,text/xml,.zip,application/zip"
-    aria-label="Choose files"
-    disabled={busy}
-    onchange={chosen}
-  />
-  <strong>{busy ? 'Reading…' : compact ? 'Add more files' : 'Drop CGMES or NC files, a zip of them or their folder anywhere, or choose them'}</strong>
-  <span>They are read on this machine. Nothing is uploaded.</span>
-</label>
-<label class="folder" class:compact>
-  <input type="file" webkitdirectory multiple aria-label="Choose a folder" disabled={busy} onchange={folder} onclick={() => (empty = null)} />
-  <span>Or a folder: its XML files and zip archives, in its subfolders too.</span>
-</label>
-{#if supported}
-  <button type="button" class="in-place" disabled={busy} onclick={openInPlace}>Open a folder to save edits in place</button>
-{/if}
+<div class="zone" class:compact>
+  <label class="files" data-testid="dropzone">
+    <input
+      type="file"
+      multiple
+      accept=".xml,application/xml,text/xml,.zip,application/zip"
+      aria-label="Choose files"
+      disabled={busy}
+      onchange={chosen}
+    />
+    <strong>{busy ? 'Reading…' : compact ? 'Add files' : 'Drop CGMES or NC files, a zip of them or their folder anywhere, or choose them'}</strong>
+    {#if !compact}<span>They are read on this machine. Nothing is uploaded.</span>{/if}
+  </label>
+  <label class="folder">
+    <input type="file" webkitdirectory multiple aria-label="Choose a folder" disabled={busy} onchange={folder} onclick={() => (empty = null)} />
+    <span>{compact ? 'Add a folder' : 'Or a folder: its XML files and zip archives, in its subfolders too.'}</span>
+  </label>
+  {#if supported}
+    <button type="button" class="in-place" disabled={busy} onclick={openInPlace}>Open a folder to save edits in place</button>
+  {/if}
+</div>
 {#if empty}<p role="status" data-testid="folder-empty">{empty}</p>{/if}
 
 <style>
-  .in-place {
-    margin-top: 0.5rem;
-    min-height: 2rem;
-    max-width: 100%;
-    padding: 0 0.75rem;
-    font: inherit;
+  .zone {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   label {
@@ -72,45 +69,73 @@
     flex-direction: column;
     gap: 0.25rem;
     padding: 1.5rem;
-    border: 2px dashed var(--line);
-    border-radius: 0.5rem;
+    border: 2px dashed var(--line-strong);
+    border-radius: var(--radius-l);
+    background: var(--surface);
     cursor: pointer;
   }
 
-  label.compact {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.75rem;
-    padding: 0.5rem 0.75rem;
-  }
-
-  label:focus-within {
+  label:focus-within,
+  label:hover {
     border-color: var(--accent);
-    background: var(--panel);
   }
 
   span {
-    color: var(--muted);
+    color: var(--text-2);
   }
 
   input {
-    margin-bottom: 0.5rem;
     max-width: 100%;
   }
 
   label.folder {
-    margin-top: 0.5rem;
     padding: 0.75rem 1.5rem;
     border-style: solid;
     border-width: 1px;
   }
 
-  label.folder.compact {
-    padding: 0.4rem 0.75rem;
+  /* In the sidebar: buttons, the inputs hidden inside them but still there to focus and to label. */
+  .compact label,
+  .compact label.folder {
+    position: relative;
+    flex-direction: row;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    font-weight: 500;
   }
 
-  label.folder input {
-    margin-bottom: 0;
+  .compact label span,
+  .compact label strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .compact label:hover {
+    background: var(--surface-2);
+  }
+
+  .compact input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .compact label:focus-within {
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+  }
+
+  .in-place {
+    max-width: 100%;
+  }
+
+  .compact .in-place {
+    font-size: 0.85rem;
   }
 </style>

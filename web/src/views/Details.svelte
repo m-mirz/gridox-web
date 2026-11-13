@@ -19,6 +19,7 @@
     findingsVersion,
     onnavigate,
     onback,
+    onclose = null,
     onedited,
   }: {
     client: WorkerClient;
@@ -29,6 +30,8 @@
     onnavigate: (id: string) => void;
     /** Back to the object shown before, if there was one. */
     onback: (() => void) | null;
+    /** Closes the inspector, where it is a drawer. */
+    onclose?: (() => void) | null;
     /** After an edit of the files: what it did, and the object to show then. */
     onedited: (result: EditResult, show: string | null) => void;
   } = $props();
@@ -64,8 +67,16 @@
 </script>
 
 <aside data-testid="details">
-  {#if onback}
-    <button type="button" class="back" onclick={onback}>← Back</button>
+  {#if onback || onclose}
+    <div class="bar">
+      {#if onback}<button type="button" class="back" onclick={onback}>← Back</button>{/if}
+      <span class="grow"></span>
+      {#if onclose}
+        <button type="button" class="ghost close" aria-label="Close the inspector" onclick={onclose}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5"></path></svg>
+        </button>
+      {/if}
+    </div>
   {/if}
 
   {#if info}
@@ -187,6 +198,24 @@
 </aside>
 
 <style>
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .grow {
+    flex-grow: 1;
+  }
+
+  .close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    padding: 0;
+  }
+
   aside {
     overflow: auto;
     padding: 0.5rem 0.75rem;
