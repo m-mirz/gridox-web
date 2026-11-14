@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /** Holds the model and does the work, so the page stays responsive whatever a file costs. */
 
-import init, { Session } from '../wasm/gridox_wasm';
+import init, { Session } from '../wasm/cimlens_wasm';
 import type { Envelope, FileOutcome, Reply, Request } from './protocol';
 import { forget, keep, keepMeta, kept, keptMeta, remove, replace } from './store';
 import { unzipped } from '../zip';

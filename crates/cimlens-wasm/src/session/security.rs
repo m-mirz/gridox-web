@@ -685,7 +685,7 @@ impl Session {
         json!({
             "title": format!("{day}_SAR"),
             "description": format!(
-                "Security analysis by gridoxide in gridox, the imbalance taken by {}, reactive limits {}.",
+                "Security analysis by gridoxide in cimlens, the imbalance taken by {}, reactive limits {}.",
                 match analysis.options.sharing.name() { "capability" => "the machines by capability", "equal" => "every generator alike", _ => "the angle reference" },
                 if analysis.options.q_limits { "held" } else { "not held" },
             ),

@@ -50,7 +50,7 @@
   let names = $derived(summary.files.filter((f) => f.status === 'loaded').map((f) => f.name));
 
   /** Its width, dragged or keyed at its edge, kept in this browser. */
-  const WIDTH = 'gridox.files-width';
+  const WIDTH = 'cimlens.files-width';
   const MIN = 220;
   const MAX = 640;
   const clamp = (w: number) => Math.round(Math.min(MAX, Math.max(MIN, w)));
@@ -128,7 +128,7 @@
       {#if elapsed !== null}<span class="sub" data-testid="elapsed">{Math.round(elapsed).toLocaleString('en')} ms</span>{/if}
     </div>
     {#if kept}<p class="sub small" data-testid="kept">Kept in this browser, on this machine, until you clear them.</p>{/if}
-    <p class="sub small"><a href="./third-party-licenses.txt" target="_blank" rel="noopener">Licences</a> of the software in gridox</p>
+    <p class="sub small"><a href="./third-party-licenses.txt" target="_blank" rel="noopener">Licences</a> of the software in cimlens</p>
   </aside>
   <!-- A focusable separator is a widget in ARIA: its width changes with the arrow keys. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->

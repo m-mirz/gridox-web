@@ -84,7 +84,7 @@
   let checking = $state(false);
   /** Counts validations, for the views to show the findings. */
   let findingsVersion = $state(0);
-  const CHECKS = 'gridox.checks';
+  const CHECKS = 'cimlens.checks';
   let checks = $state<Checks>(storedChecks());
   let browse = $state<Browse>();
   /** The last power flow, until the model changes. */
@@ -216,8 +216,8 @@
   }
 
   /** The Files sidebar, collapsed or not, and the theme: kept in this browser. */
-  const SIDEBAR = 'gridox.files-collapsed';
-  const THEME = 'gridox.theme';
+  const SIDEBAR = 'cimlens.files-collapsed';
+  const THEME = 'cimlens.theme';
   const stored = (key: string) => {
     try {
       return localStorage.getItem(key);
@@ -370,7 +370,7 @@
   <header class="top">
     <div class="brand">
       <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="5" cy="11" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle><circle cx="17" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle><circle cx="17" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle><path d="M8 10l6-4M8 12l6 4" stroke="currentColor" stroke-width="2"></path></svg>
-      <h1>gridox</h1>
+      <h1>cimlens</h1>
     </div>
     {#if objects}
       <span class="model" title={label}>{label}</span>
@@ -503,9 +503,9 @@
         {/if}
       </div>
       <p class="sub about" data-testid="about">
-        gridox is free software under the Apache License 2.0, with libraries under their own licences, LGPL-2.1-or-later code among
+        cimlens is free software under the Apache License 2.0, with libraries under their own licences, LGPL-2.1-or-later code among
         them: see the <a href="./third-party-licenses.txt" target="_blank" rel="noopener">licences</a>, and the
-        <a href="https://github.com/m-mirz/gridox-web" target="_blank" rel="noopener">source</a>.
+        <a href="https://github.com/m-mirz/cimlens" target="_blank" rel="noopener">source</a>.
       </p>
     </div>
   {/if}

@@ -1,7 +1,7 @@
 // Writes public/third-party-licenses.txt: the licences and notices of everything the site ships
 // beside its own code. The bundle's minifier drops licence comments, so this file is where they go.
 //
-// The Rust crates are those the WebAssembly module is built from: gridox-wasm's normal dependencies
+// The Rust crates are those the WebAssembly module is built from: cimlens-wasm's normal dependencies
 // for wasm32-unknown-unknown, as cargo resolves them, less proc-macros (they run at build time and
 // ship nothing). Each crate's own licence and notice files are copied; a crate from a git checkout
 // takes its repository's when it has none of its own. The npm packages are those the bundle and the
@@ -65,7 +65,7 @@ const byId = new Map(metadata.packages.map((p) => [p.id, p]));
 const nodes = new Map(metadata.resolve.nodes.map((n) => [n.id, n]));
 const isProcMacro = (pkg) => pkg.targets.some((t) => t.kind.includes('proc-macro'));
 
-const start = metadata.packages.find((p) => p.name === 'gridox-wasm');
+const start = metadata.packages.find((p) => p.name === 'cimlens-wasm');
 const shipped = new Set();
 const queue = [start.id];
 while (queue.length) {
@@ -87,15 +87,15 @@ const commit = (() => {
     return 'the commit this site was built from';
   }
 })();
-const repository = start.repository ?? 'https://github.com/m-mirz/gridox-web';
+const repository = start.repository ?? 'https://github.com/m-mirz/cimlens';
 
 const lgpl = crates.filter((c) => /LGPL/.test(c.license ?? ''));
 const missing = [];
-let out = `gridox: the software in this site besides its own
+let out = `cimlens: the software in this site besides its own
 
-gridox (${repository}) is licensed under the Apache License 2.0. The site also carries the
+cimlens (${repository}) is licensed under the Apache License 2.0. The site also carries the
 libraries listed here, each under its own licence: the WebAssembly module
-(assets/gridox_wasm_bg-*.wasm) is built from ${crates.length} Rust crates, and the scripts include
+(assets/cimlens_wasm_bg-*.wasm) is built from ${crates.length} Rust crates, and the scripts include
 ${NPM.length} npm packages. Their licences and notices follow.
 `;
 
@@ -103,7 +103,7 @@ out += rule('1. Code under the GNU Lesser General Public License 2.1 or later');
 for (const c of lgpl) {
   out += `
 ${c.name} ${c.version} (licence: ${c.license}) is in the WebAssembly module, statically linked with
-gridox's own code and the other libraries below.
+cimlens's own code and the other libraries below.
   Source: ${sourceOf(c)}
 `;
   const provenance = join(dirname(c.manifest_path), 'src', 'klu_native', 'PROVENANCE.md');

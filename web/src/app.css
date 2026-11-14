@@ -1,5 +1,5 @@
 /*
- * gridox's tokens: surfaces, text, an accent, the findings' colours and the grid's voltage bands,
+ * cimlens's tokens: surfaces, text, an accent, the findings' colours and the grid's voltage bands,
  * light and dark. Dark follows the system unless the page is set to a theme (`data-theme` on the
  * root). The older names (--fg, --muted, --panel, --warn, --focus) stay as aliases for the views.
  */

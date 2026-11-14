@@ -44,7 +44,7 @@ export const folder = $state<{ root: FileSystemDirectoryHandle | null; entries: 
   connected: false,
 });
 
-const DB = 'gridox-folder';
+const DB = 'cimlens-folder';
 const STORE = 'folder';
 const KEY = 'current';
 
@@ -140,7 +140,7 @@ export async function open(): Promise<{ files: File[]; paths: string[] } | null>
   let root: FileSystemDirectoryHandle;
   try {
     // @ts-expect-error Not in TypeScript's DOM library.
-    root = await window.showDirectoryPicker({ id: 'gridox-model', mode: 'readwrite' });
+    root = await window.showDirectoryPicker({ id: 'cimlens-model', mode: 'readwrite' });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return null;
     throw error;

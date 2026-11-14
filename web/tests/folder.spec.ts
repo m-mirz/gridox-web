@@ -180,7 +180,7 @@ test('forgetting the folder, or clearing the model, writes nothing more', async 
       page.evaluate(
         () =>
           new Promise((resolve) => {
-            const open = indexedDB.open('gridox-folder', 1);
+            const open = indexedDB.open('cimlens-folder', 1);
             open.onsuccess = () => {
               const get = open.result.transaction('folder').objectStore('folder').get('current');
               get.onsuccess = () => {

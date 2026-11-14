@@ -14,7 +14,7 @@ export type FileOutcome =
     }
   | { status: 'skipped'; name: string; reason: string };
 
-/** gridox-wasm's `Summary`. */
+/** cimlens-wasm's `Summary`. */
 export interface Summary {
   files: FileOutcome[];
   objects: number;

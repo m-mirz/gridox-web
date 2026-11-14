@@ -21,7 +21,7 @@ function contentSecurityPolicy(): Plugin {
     "base-uri 'self'",
   ].join('; ');
   return {
-    name: 'gridox-csp',
+    name: 'cimlens-csp',
     apply: 'build',
     transformIndexHtml: () => [
       {
@@ -35,7 +35,7 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   // The repository's path on GitHub Pages.
-  base: process.env.GRIDOX_BASE ?? '/gridox-web/',
+  base: process.env.CIMLENS_BASE ?? '/cimlens/',
   worker: { format: 'es' },
   plugins: [
     svelte(),
@@ -43,8 +43,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'gridox',
-        short_name: 'gridox',
+        name: 'cimlens',
+        short_name: 'cimlens',
         description: 'Power system models in your browser. Nothing leaves your machine.',
         theme_color: '#14532d',
         background_color: '#ffffff',

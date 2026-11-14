@@ -1,4 +1,4 @@
-# gridox-web
+# cimlens
 
 Power system models in your browser: [gridoxide](https://github.com/m-mirz/gridoxide) and
 [cimoxide](https://github.com/m-mirz/cimoxide) as WebAssembly, in a static PWA. Nothing leaves your machine.
@@ -50,7 +50,7 @@ quality, Guide), / to the search, Escape closes the inspector, and Ctrl or ⌘ w
 
 ## Licences
 
-gridox is licensed under the Apache License 2.0. The site it builds carries libraries under their
+cimlens is licensed under the Apache License 2.0. The site it builds carries libraries under their
 own licences, listed with their notices in `third-party-licenses.txt`, which `npm run build`
 writes from cargo's and npm's metadata (`web/scripts/licenses.mjs`) and the page links to. Among
 them is LGPL-2.1-or-later code: gridoxide's default solver, `klu_native` in gridoxide-sparse, is a
@@ -59,5 +59,5 @@ the WebAssembly module with a modified version, as that licence asks.
 
 ## How it fits together
 
-`crates/gridox-wasm` is the libraries' API as the worker needs it, JSON in and out. `web/src/worker` holds the model in a Web Worker, so the
+`crates/cimlens-wasm` is the libraries' API as the worker needs it, JSON in and out. `web/src/worker` holds the model in a Web Worker, so the
 page stays responsive. `web/src/views` is the Svelte UI. A push to `main` deploys to GitHub Pages.

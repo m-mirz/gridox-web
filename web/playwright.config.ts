@@ -5,8 +5,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   reporter: 'list',
-  use: { baseURL: 'http://localhost:4173/gridox-web/' },
-  webServer: { command: 'npm run preview', url: 'http://localhost:4173/gridox-web/', reuseExistingServer: !process.env.CI },
+  use: { baseURL: 'http://localhost:4173/cimlens/' },
+  webServer: { command: 'npm run preview', url: 'http://localhost:4173/cimlens/', reuseExistingServer: !process.env.CI },
   projects: [
     { name: 'chromium', use: devices['Desktop Chrome'] },
     { name: 'firefox', use: devices['Desktop Firefox'] },
