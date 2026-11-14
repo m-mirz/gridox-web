@@ -170,7 +170,7 @@ export function gridElements(g: Grid): ElementDefinition[] {
       group: "nodes" as const,
       data: {
         id: n.id, label: n.label, kind: n.kind === "Substation" ? "substation" : "boundary", sev: worst(n.findings),
-        size: Math.min(26, 10 + 2 * Math.sqrt(size)), ring: ring(n.findings), band: band(n.kV[0]),
+        size: Math.min(18, 8 + 1.2 * Math.sqrt(size)), ring: ring(n.findings), band: band(n.kV[0]),
       },
     };
   });
