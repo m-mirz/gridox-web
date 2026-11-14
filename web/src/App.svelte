@@ -723,6 +723,16 @@
       display: none;
     }
 
+    /* Room for the top bar's buttons on a phone, whatever the fonts. */
+    .top {
+      gap: 0.4rem;
+      padding: 0 0.4rem 0 0.75rem;
+    }
+
+    .top .ghost:not(.icon) {
+      padding: 0 0.5rem;
+    }
+
     .scrim {
       position: absolute;
       inset: 0;
