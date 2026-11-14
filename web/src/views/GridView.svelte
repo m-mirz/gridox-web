@@ -216,6 +216,8 @@
       hideEdgesOnViewport: elements.length > 3000,
       minZoom: 0.05,
       maxZoom: 4,
+      // Finer steps per wheel notch than the default (1).
+      wheelSensitivity: 0.8,
     });
     layouts = inside ? inside.layouts : grid.layouts;
     layout = choice(layouts, inside ? chosen.inside : chosen.grid);
