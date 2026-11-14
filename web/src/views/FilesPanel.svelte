@@ -4,6 +4,8 @@
   import type { WorkerClient } from '../worker/client';
   import type { FindingsSummary, Summary } from '../worker/protocol';
   import DropZone from './DropZone.svelte';
+  import Edge from './Edge.svelte';
+  import { Width } from './resize.svelte';
   import EditedFiles from './EditedFiles.svelte';
   import FileTree from './FileTree.svelte';
   import FolderBar from './FolderBar.svelte';
@@ -49,51 +51,8 @@
 
   let names = $derived(summary.files.filter((f) => f.status === 'loaded').map((f) => f.name));
 
-  /** Its width, dragged or keyed at its edge, kept in this browser. */
-  const WIDTH = 'cimlens.files-width';
-  const MIN = 220;
-  const MAX = 640;
-  const clamp = (w: number) => Math.round(Math.min(MAX, Math.max(MIN, w)));
-  let width = $state(
-    (() => {
-      try {
-        const kept = Number(localStorage.getItem(WIDTH));
-        return kept ? clamp(kept) : 288;
-      } catch {
-        return 288;
-      }
-    })(),
-  );
-  $effect(() => {
-    try {
-      localStorage.setItem(WIDTH, String(width));
-    } catch {
-      // A convenience.
-    }
-  });
-
-  function drag(event: PointerEvent) {
-    const handle = event.currentTarget as HTMLElement;
-    const start = event.clientX - width;
-    handle.setPointerCapture(event.pointerId);
-    const move = (e: PointerEvent) => (width = clamp(e.clientX - start));
-    const up = () => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
-  }
-
-  function keyed(event: KeyboardEvent) {
-    const step = event.shiftKey ? 64 : 16;
-    if (event.key === 'ArrowLeft') width = clamp(width - step);
-    else if (event.key === 'ArrowRight') width = clamp(width + step);
-    else if (event.key === 'Home') width = MIN;
-    else if (event.key === 'End') width = MAX;
-    else return;
-    event.preventDefault();
-  }
+  /** Its width, dragged or keyed at its right edge, kept in this browser. */
+  const width = new Width({ key: 'cimlens.files-width', initial: 288, min: 220, max: 640, side: 'right' });
 </script>
 
 {#if collapsed}
@@ -104,7 +63,7 @@
     <span class="sub" title="Files in the model">{names.length - summary.excluded.length}</span>
   </nav>
 {:else}
-  <div class="panel" style:width={`${width}px`}>
+  <div class="panel" style:width={`${width.value}px`}>
   <aside class="files" aria-label="Files" data-testid="files-panel">
     <div class="head">
       <span class="label">Files</span>
@@ -130,21 +89,7 @@
     {#if kept}<p class="sub small" data-testid="kept">Kept in this browser, on this machine, until you clear them.</p>{/if}
     <p class="sub small"><a href="./third-party-licenses.txt" target="_blank" rel="noopener">Licences</a> of the software in cimlens</p>
   </aside>
-  <!-- A focusable separator is a widget in ARIA: its width changes with the arrow keys. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-  <div
-    class="resize"
-    role="separator"
-    aria-orientation="vertical"
-    aria-label="Width of the files"
-    aria-valuemin={MIN}
-    aria-valuemax={MAX}
-    aria-valuenow={width}
-    tabindex="0"
-    title="Drag, or use the arrow keys, to change the width"
-    onpointerdown={drag}
-    onkeydown={keyed}
-    ></div>
+  <Edge {width} label="Width of the files" />
   </div>
 {/if}
 
@@ -167,24 +112,6 @@
     border-right: 1px solid var(--line);
   }
 
-  /* Its right edge, to drag. */
-  .resize {
-    position: absolute;
-    top: 0;
-    right: -3px;
-    bottom: 0;
-    z-index: 3;
-    width: 6px;
-    cursor: col-resize;
-    touch-action: none;
-  }
-
-  .resize:hover,
-  .resize:focus-visible {
-    background: var(--accent);
-    outline: none;
-    opacity: 0.5;
-  }
 
   .rail {
     display: flex;
@@ -243,10 +170,6 @@
 
     .files {
       box-shadow: var(--shadow);
-    }
-
-    .resize {
-      display: none;
     }
   }
 </style>

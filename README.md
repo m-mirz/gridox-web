@@ -32,8 +32,24 @@ validates the SAR it downloads with `cimcli` from `CIMCLI`, else `../cimoxide/ta
 ## The example
 
 "Load an example" fetches ReliCapGrid, ENTSO-E's test configuration (CC BY-SA 4.0), from its
-repository at a fixed commit (`web/src/example.ts`, its file list in `example-files.json`): the
-only request the page makes to another site, and only when asked. The site ships none of it.
+repository at a fixed commit (`web/src/example.ts`, its file list in `example-files.json`), only
+when asked. The site ships none of it. Besides the chat, it is the only request the page makes to
+another site.
+
+## The chat
+
+"Chat" opens a panel on the right that answers questions about the model loaded, with the user's
+own API key for Anthropic, OpenAI or Google, sent straight from the page to that provider and to no
+one else. Nothing is sent until they ask; the questions, and what the model reads of the data to
+answer them, then go to that provider. The key stays in memory unless they ask for it to be kept in
+the browser.
+
+It runs on the [AI SDK](https://ai-sdk.dev), loaded only when the chat first sends. The model reads
+the data through tools in `web/src/chat/tools.ts`, which ask the worker as the views do: the
+summary, search, an object, the validation and its findings, a power flow, the contingencies, and
+showing an object in the page. None of them edits. The providers' hosts are in the page's
+Content-Security-Policy (`web/vite.config.ts`, from `web/src/chat/providers.ts`), and
+`tests/chat.spec.ts` runs a conversation against a stand-in for Anthropic's API.
 
 ## The guide
 

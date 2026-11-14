@@ -10,6 +10,7 @@
   import Browse from './views/Browse.svelte';
   import DatasetsView from './views/DatasetsView.svelte';
   import BoundaryView from './views/BoundaryView.svelte';
+  import ChatPanel from './views/ChatPanel.svelte';
   import DropZone from './views/DropZone.svelte';
   import FindingsView from './views/FindingsView.svelte';
   import NetworkCodesView from './views/NetworkCodesView.svelte';
@@ -243,6 +244,10 @@
     store(THEME, theme);
   });
   const NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
+  /** The chat on the right, open or not: kept in this browser. */
+  const CHAT = 'cimlens.chat-open';
+  let chatting = $state(stored(CHAT) === 'true');
+  $effect(() => store(CHAT, String(chatting)));
 
   /** The example being fetched: how far it has come. */
   let fetching = $state<{ done: number; total: number } | null>(null);
@@ -385,6 +390,9 @@
         </button>
       {/if}
       <button type="button" class="ghost" disabled={!editing?.undo} title="Undo the last edit (Ctrl+Z)" onclick={undo}>Undo</button>
+      <button type="button" class="ghost icon" aria-label="Chat" aria-pressed={chatting} title="Chat: ask about the model, with your own key" data-testid="chat-toggle" onclick={() => (chatting = !chatting)}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+      </button>
       <button type="button" class="status" data-testid="status" onclick={() => go('validation')} title={findings ? findingsText(findings) : ''}>
         {#if checking}
           Validating…
@@ -483,6 +491,9 @@
           <div class="view page"><p class="sub">No objects in the files loaded.</p></div>
         {/if}
       </main>
+      {#if chatting && objects}
+        <ChatPanel {client} {findings} onnavigate={navigate} onclose={() => (chatting = false)} />
+      {/if}
     </div>
   {:else}
     <div class="welcome">
@@ -497,8 +508,8 @@
         {:else}
           <span class="sub">
             ENTSO-E's test configuration, {FILES.length} files (about {MEGABYTES} MB) fetched from its
-            <a href={`${REPOSITORY}/tree/${COMMIT}`} target="_blank" rel="noopener">repository</a> when you ask: the only request to another
-            site. {ATTRIBUTION} (<a href={LICENSE} target="_blank" rel="noopener">licence</a>).
+            <a href={`${REPOSITORY}/tree/${COMMIT}`} target="_blank" rel="noopener">repository</a> when you ask. Only it and the chat, with your own key, reach
+            another site. {ATTRIBUTION} (<a href={LICENSE} target="_blank" rel="noopener">licence</a>).
           </span>
         {/if}
       </div>
@@ -578,6 +589,18 @@
     border-radius: 1rem;
     color: var(--text-2);
     white-space: nowrap;
+  }
+
+  .icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    padding: 0;
+  }
+
+  .icon[aria-pressed='true'] {
+    color: var(--accent);
   }
 
   .edited {
@@ -698,6 +721,16 @@
     .top .model,
     .top .edited {
       display: none;
+    }
+
+    /* Room for the top bar's buttons on a phone, whatever the fonts. */
+    .top {
+      gap: 0.4rem;
+      padding: 0 0.4rem 0 0.75rem;
+    }
+
+    .top .ghost:not(.icon) {
+      padding: 0 0.5rem;
     }
 
     .scrim {

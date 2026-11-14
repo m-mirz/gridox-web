@@ -787,6 +787,28 @@ test.describe('the shell', () => {
     }
   });
 
+  test('the tree is as wide as dragged or keyed, and stays so', async ({ page }) => {
+    const tree = page.getByTestId('tree');
+    const edge = page.getByRole('separator', { name: 'Width of the tree' });
+    const before = (await tree.boundingBox())!.width;
+    const at = (await edge.boundingBox())!;
+    await page.mouse.move(at.x + at.width / 2, at.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(at.x + at.width / 2 + 120, at.y + 200, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => (await tree.boundingBox())!.width).toBeGreaterThan(before + 100);
+    const dragged = Number(await edge.getAttribute('aria-valuenow'));
+    await edge.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(edge).toHaveAttribute('aria-valuenow', String(dragged - 16));
+    await page.keyboard.press('Home');
+    await expect(edge).toHaveAttribute('aria-valuenow', '200');
+    if (await page.getByTestId('kept').isVisible()) {
+      await page.reload();
+      await expect(page.getByRole('separator', { name: 'Width of the tree' })).toHaveAttribute('aria-valuenow', '200');
+    }
+  });
+
   test('the top bar says what is edited, and undoes it', async ({ page }) => {
     const undo = page.getByRole('banner').getByRole('button', { name: 'Undo' });
     await expect(undo).toBeDisabled();
