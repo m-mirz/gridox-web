@@ -2,6 +2,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
+import { PROVIDERS } from './src/chat/providers';
 
 /**
  * Models can be confidential, and "nothing leaves your browser" should be enforced rather than
@@ -14,8 +15,9 @@ function contentSecurityPolicy(): Plugin {
     "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self'",
     "img-src 'self' data:",
-    // The example, and only when asked for: ReliCapGrid's files from its repository.
-    "connect-src 'self' https://raw.githubusercontent.com",
+    // The example, and only when asked for: ReliCapGrid's files from its repository. And the chat's
+    // providers, with the user's own key, only when they ask.
+    `connect-src 'self' https://raw.githubusercontent.com ${PROVIDERS.map((p) => p.host).join(' ')}`,
     "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

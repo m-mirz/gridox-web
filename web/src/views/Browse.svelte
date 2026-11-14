@@ -5,6 +5,8 @@
   import Details, { type Info } from './Details.svelte';
   import GridView from './GridView.svelte';
   import TreeView from './TreeView.svelte';
+  import Edge from './Edge.svelte';
+  import { Width } from './resize.svelte';
 
   let {
     client,
@@ -23,6 +25,8 @@
   } = $props();
 
   let tree = $state<TreeView>();
+  /** The tree's width, dragged or keyed at its right edge, kept in this browser; the grid keeps some room. */
+  const treeWidth = new Width({ key: 'cimlens.tree-width', initial: 320, min: 200, max: 720, side: 'right', room: 480 });
   let gridView = $state<GridView>();
   let id = $state<string | null>(null);
   let info = $state.raw<Info | null>(null);
@@ -93,8 +97,11 @@
   }
 </script>
 
-<div class="browse">
-  <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
+<div class="browse" style:--tree={`${treeWidth.value}px`}>
+  <div class="side">
+    <TreeView bind:this={tree} {client} {version} {findingsVersion} {validated} onpick={picked} />
+    <Edge width={treeWidth} label="Width of the tree" />
+  </div>
   <div class="stage">
     <GridView bind:this={gridView} {client} {version} {flow} onselect={selectedOnGrid} />
     {#if id || info}
@@ -108,14 +115,22 @@
 <style>
   .browse {
     display: grid;
-    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+    grid-template-columns: var(--tree) minmax(0, 1fr);
     flex-grow: 1;
     min-height: 0;
   }
 
-  .browse > :global(:first-child) {
+  .side {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
     border-right: 1px solid var(--line);
     background: var(--surface);
+  }
+
+  .side > :global(nav) {
+    flex-grow: 1;
   }
 
   .stage {
@@ -156,7 +171,7 @@
       grid-template-rows: minmax(12rem, 40%) minmax(0, 1fr);
     }
 
-    .browse > :global(:first-child) {
+    .side {
       border-right: none;
       border-bottom: 1px solid var(--line);
     }
