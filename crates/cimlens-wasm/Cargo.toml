@@ -1,6 +1,6 @@
 [package]
-name = "gridox-wasm"
-description = "The libraries behind gridox-web, as WebAssembly: JSON in and out, no analysis of its own"
+name = "cimlens-wasm"
+description = "The libraries behind cimlens, as WebAssembly: JSON in and out, no analysis of its own"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

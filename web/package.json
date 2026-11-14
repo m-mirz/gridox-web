@@ -1,11 +1,11 @@
 {
-  "name": "gridox-web",
+  "name": "cimlens",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "wasm": "wasm-pack build ../crates/gridox-wasm --target web --release --out-dir ../../web/src/wasm --out-name gridox_wasm",
+    "wasm": "wasm-pack build ../crates/cimlens-wasm --target web --release --out-dir ../../web/src/wasm --out-name cimlens_wasm",
     "dev": "npm run wasm && vite",
     "build": "npm run wasm && npm run licenses && vite build",
     "licenses": "node scripts/licenses.mjs",

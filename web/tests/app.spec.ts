@@ -86,7 +86,7 @@ test.describe('real drags', () => {
   });
 
   test('a folder, its XML in its subfolders too', async ({ page }) => {
-    const folder = mkdtempSync(join(tmpdir(), 'gridox-'));
+    const folder = mkdtempSync(join(tmpdir(), 'cimlens-'));
     mkdirSync(join(folder, 'Grid'));
     cpSync(EQ, join(folder, 'small_EQ.xml'));
     cpSync(SSH, join(folder, 'Grid', 'small_SSH.xml'));
@@ -98,7 +98,7 @@ test.describe('real drags', () => {
   });
 
   test('says so when a folder has no XML', async ({ page }) => {
-    const folder = mkdtempSync(join(tmpdir(), 'gridox-'));
+    const folder = mkdtempSync(join(tmpdir(), 'cimlens-'));
     writeFileSync(join(folder, 'README.adoc'), 'not a model');
     await drag(page, { files: [folder] }, 600, 600);
     await expect(page.getByTestId('notice')).toContainText('no XML files in that folder');
@@ -672,7 +672,7 @@ test.describe('security analysis', () => {
     const path = await download.path();
     expect(readFileSync(path, 'utf8')).toContain('SecurityAnalysisResult');
     // The SAR, loaded with its model: its results, and the analysis's own beside them.
-    const copy = join(mkdtempSync(join(tmpdir(), 'gridox-')), 'sar.xml');
+    const copy = join(mkdtempSync(join(tmpdir(), 'cimlens-')), 'sar.xml');
     cpSync(path, copy);
     await input(page).setInputFiles(copy);
     await sa.getByRole('tab', { name: /Supplied SAR/ }).click();
@@ -686,7 +686,7 @@ test.describe('security analysis', () => {
       const id = `_00000000-0000-4000-8000-0000000071${i.toString().padStart(2, '0')}`;
       return `<nc:OrdinaryContingency rdf:ID="${id}"><cim:IdentifiedObject.name>Nothing lost ${i}</cim:IdentifiedObject.name></nc:OrdinaryContingency>`;
     }).join('\n');
-    const file = join(mkdtempSync(join(tmpdir(), 'gridox-')), 'nc_CO_many.xml');
+    const file = join(mkdtempSync(join(tmpdir(), 'cimlens-')), 'nc_CO_many.xml');
     writeFileSync(
       file,
       `<?xml version="1.0" encoding="UTF-8"?>
@@ -951,7 +951,7 @@ test.describe('editing', () => {
 });
 
 test.describe('choosing many files at once', () => {
-  const scratch = () => mkdtempSync(join(tmpdir(), 'gridox-'));
+  const scratch = () => mkdtempSync(join(tmpdir(), 'cimlens-'));
 
   test('a zip archive, with one in it, is read as the files it holds', async ({ page }) => {
     const inner = zip([{ path: 'state/grid_SV.xml', data: readFileSync(SV), deflate: true }]);
@@ -1072,7 +1072,7 @@ test('says so when the files hold no grid', async ({ page }) => {
 
 test('a reload brings the files back, until they are cleared', async ({ playwright, browserName, baseURL }) => {
   // On disk, as a browser is used: WebKit gives Playwright's usual contexts no private file system.
-  const context = await playwright[browserName].launchPersistentContext(mkdtempSync(join(tmpdir(), 'gridox-')), { baseURL });
+  const context = await playwright[browserName].launchPersistentContext(mkdtempSync(join(tmpdir(), 'cimlens-')), { baseURL });
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto('./');
   await input(page).setInputFiles([EQ, SSH]);

@@ -340,7 +340,7 @@ test('SAR_UC1: the analysis, the supplied SAR beside it, and a SAR cimoxide vali
   if (!(await form.getByLabel('Rights holder').inputValue())) await form.getByLabel('Rights holder').fill('RCC Jotunheim');
   if (!(await form.getByLabel('Title').inputValue())) await form.getByLabel('Title').fill('SAR');
   const [download] = await Promise.all([page.waitForEvent('download'), form.getByRole('button', { name: 'Download SAR' }).click()]);
-  const ours = join(mkdtempSync(join(tmpdir(), 'gridox-sar-')), 'SAR_gridox.xml');
+  const ours = join(mkdtempSync(join(tmpdir(), 'cimlens-sar-')), 'SAR_cimlens.xml');
   cpSync(await download.path(), ours);
 
   test.skip(!existsSync(CIMCLI), `no cimcli at ${CIMCLI}: set CIMCLI to validate the SAR`);
